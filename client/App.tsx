@@ -26,7 +26,7 @@ const AppComponent = () => (
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/home" element={<HomePage />} />
-          <Route path="/create-observation" element={<CreateObservationPage />} />
+          <Route path="/observation" element={<CreateObservationPage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

@@ -10,6 +10,8 @@ import {
   Fish,
   LogOut,
   User as UserIcon,
+  MapPin,
+  Calendar,
 } from "lucide-react";
 
 interface UserSession {
@@ -21,9 +23,26 @@ interface UserSession {
   badges: string[];
 }
 
+interface Observation {
+  id: string;
+  userId: string;
+  species: string;
+  type: string;
+  location: string;
+  latitude: number;
+  longitude: number;
+  date: string;
+  time: string;
+  notes: string;
+  confidence: string;
+  image?: string;
+  timestamp: number;
+}
+
 export default function HomePage() {
   const navigate = useNavigate();
   const [user, setUser] = useState<UserSession | null>(null);
+  const [observations, setObservations] = useState<Observation[]>([]);
 
   useEffect(() => {
     // Check for existing session
@@ -32,6 +51,12 @@ export default function HomePage() {
       navigate("/auth");
     } else {
       setUser(JSON.parse(session));
+    }
+
+    // Load observations
+    const savedObservations = localStorage.getItem("observations");
+    if (savedObservations) {
+      setObservations(JSON.parse(savedObservations));
     }
   }, [navigate]);
 
@@ -141,9 +166,13 @@ export default function HomePage() {
               </h3>
               <Fish className="w-5 h-5 text-primary" />
             </div>
-            <p className="text-3xl font-bold text-foreground">0</p>
+            <p className="text-3xl font-bold text-foreground">
+              {observations.length}
+            </p>
             <p className="text-xs text-muted-foreground mt-2">
-              Create your first one!
+              {observations.length === 0
+                ? "Create your first one!"
+                : "Keep exploring!"}
             </p>
           </div>
         </div>
@@ -169,7 +198,7 @@ export default function HomePage() {
         {/* Action Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Button
-            onClick={() => navigate("/create-observation")}
+            onClick={() => navigate("/observation")}
             className="h-16 text-lg bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 text-white font-semibold rounded-2xl"
           >
             <Plus className="w-6 h-6 mr-2" />
@@ -190,12 +219,67 @@ export default function HomePage() {
           <h3 className="text-xl font-bold text-foreground mb-4">
             Recent Activity
           </h3>
-          <div className="bg-card rounded-2xl border border-border p-8 text-center">
-            <Fish className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-            <p className="text-muted-foreground">
-              No observations yet. Start exploring to see your activity here!
-            </p>
-          </div>
+          {observations.length === 0 ? (
+            <div className="bg-card rounded-2xl border border-border p-8 text-center">
+              <Fish className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+              <p className="text-muted-foreground">
+                No observations yet. Start exploring to see your activity here!
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {observations
+                .sort((a, b) => b.timestamp - a.timestamp)
+                .slice(0, 5)
+                .map((obs) => (
+                  <div
+                    key={obs.id}
+                    className="bg-card rounded-2xl border border-border p-6 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex gap-4">
+                      {obs.image && (
+                        <img
+                          src={obs.image}
+                          alt={obs.species}
+                          className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <h4 className="font-bold text-lg text-foreground">
+                            {obs.species}
+                          </h4>
+                          <span className="text-xs font-medium px-2 py-1 rounded-full bg-primary/10 text-primary whitespace-nowrap">
+                            {obs.type}
+                          </span>
+                        </div>
+                        <div className="space-y-1 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-2">
+                            <Calendar className="w-4 h-4" />
+                            {obs.date} at {obs.time}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-4 h-4" />
+                            {obs.location}
+                          </div>
+                          {obs.notes && (
+                            <p className="mt-2 text-foreground">{obs.notes}</p>
+                          )}
+                        </div>
+                        <div className="mt-3 flex items-center gap-2">
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Confidence:
+                          </span>
+                          <span className="text-xs font-semibold capitalize px-2 py-1 rounded bg-secondary/10 text-secondary">
+                            {obs.confidence}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
