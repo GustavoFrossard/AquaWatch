@@ -277,15 +277,15 @@ export default function MapPage() {
 
   if (loading || !userLocation) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex items-center justify-center px-4">
+      <div className="w-screen h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin mb-4">
-            <MapPin className="w-10 h-10 sm:w-12 sm:h-12 text-primary mx-auto" />
+            <MapPin className="w-12 h-12 text-primary mx-auto" />
           </div>
-          <p className="text-base sm:text-lg font-semibold text-foreground">
+          <p className="text-lg font-semibold text-foreground">
             Localizando você...
           </p>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-2">
+          <p className="text-sm text-muted-foreground mt-2">
             Por favor, aguarde
           </p>
         </div>
@@ -294,269 +294,181 @@ export default function MapPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5">
-      {/* Desktop Header */}
-      <div className="hidden lg:block bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/home")}
-              className="flex-shrink-0"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">
-                Mapa
-              </h1>
-              <p className="text-xs text-muted-foreground hidden sm:block">
-                Explore animais aquáticos nas redondezas
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+    <>
+      {/* Mobile View */}
+      <div className="lg:hidden w-screen h-screen relative bg-background">
+        {/* Mapa Fullscreen */}
+        <div className="w-full h-full relative">
+          <MapContainer
+            center={[userLocation.latitude, userLocation.longitude]}
+            zoom={15}
+            style={{ width: "100%", height: "100%" }}
+          >
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
 
-      <div className="lg:max-w-6xl lg:mx-auto lg:px-3 sm:lg:px-4 lg:py-4 sm:lg:py-6">
-        <div className="lg:grid lg:grid-cols-4 lg:gap-4 sm:lg:gap-6 h-screen lg:h-auto">
-          {/* Mapa */}
-          <div className="lg:col-span-3 relative w-full h-screen lg:h-[600px] rounded-xl sm:lg:rounded-2xl overflow-hidden border-0 lg:border lg:border-border">
-            <MapContainer
+            {/* Círculo de alcance do usuário */}
+            <Circle
               center={[userLocation.latitude, userLocation.longitude]}
-              zoom={15}
-              style={{ height: "100%", width: "100%" }}
+              radius={5000}
+              pathOptions={{
+                color: "rgba(59, 130, 246, 0.3)",
+                fillColor: "rgba(59, 130, 246, 0.1)",
+                weight: 2,
+              }}
+            />
+
+            {/* Marcador da localização do usuário */}
+            <Marker
+              position={[userLocation.latitude, userLocation.longitude]}
+              icon={L.icon({
+                iconUrl: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOCIgZmlsbD0iIzNiODJmNiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjQiIGZpbGw9IiNmZmYiLz48L3N2Zz4=",
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                popupAnchor: [0, -16],
+              })}
             >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
+              <Popup>
+                <div className="p-2">
+                  <p className="font-semibold text-sm">Sua Localização</p>
+                  <p className="text-xs text-muted-foreground">
+                    {userLocation.latitude.toFixed(4)}, 
+                    {userLocation.longitude.toFixed(4)}
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
 
-              {/* Círculo de alcance do usuário */}
-              <Circle
-                center={[userLocation.latitude, userLocation.longitude]}
-                radius={5000}
-                pathOptions={{
-                  color: "rgba(59, 130, 246, 0.3)",
-                  fillColor: "rgba(59, 130, 246, 0.1)",
-                  weight: 2,
-                }}
-              />
-
-              {/* Marcador da localização do usuário */}
+            {/* Marcadores das observações registradas */}
+            {filteredObservations.map((obs) => (
               <Marker
-                position={[userLocation.latitude, userLocation.longitude]}
-                icon={L.icon({
-                  iconUrl: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOCIgZmlsbD0iIzNiODJmNiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjQiIGZpbGw9IiNmZmYiLz48L3N2Zz4=",
-                  iconSize: [32, 32],
-                  iconAnchor: [16, 16],
-                  popupAnchor: [0, -16],
-                })}
+                key={obs.id}
+                position={[obs.latitude, obs.longitude]}
+                icon={createObservationIcon(obs.type)}
+              >
+                <Popup>
+                  <div className="p-2 max-w-xs">
+                    {obs.image && (
+                      <img
+                        src={obs.image}
+                        alt={obs.species}
+                        className="w-full h-24 object-cover rounded mb-2"
+                      />
+                    )}
+                    <p className="font-semibold text-xs">{obs.species}</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {obs.date} às {obs.time}
+                    </p>
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full text-white"
+                        style={{
+                          backgroundColor:
+                            typeColors[
+                              obs.type as keyof typeof typeColors
+                            ]?.color,
+                        }}
+                      >
+                        {obs.type}
+                      </span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">
+                        {obs.confidence}
+                      </span>
+                    </div>
+                    {obs.notes && (
+                      <p className="text-xs text-foreground line-clamp-2">
+                        {obs.notes}
+                      </p>
+                    )}
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+
+            {/* Marcadores dos animais nas redondezas */}
+            {filteredAnimals.map((animal) => (
+              <Marker
+                key={animal.id}
+                position={[animal.latitude, animal.longitude]}
+                icon={createAnimalIcon(animal.type, animal.rarity)}
               >
                 <Popup>
                   <div className="p-2">
-                    <p className="font-semibold text-sm">Sua Localização</p>
-                    <p className="text-xs text-muted-foreground">
-                      {userLocation.latitude.toFixed(4)}, 
-                      {userLocation.longitude.toFixed(4)}
+                    <p className="font-semibold text-xs">{animal.name}</p>
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full text-white"
+                        style={{
+                          backgroundColor:
+                            typeColors[
+                              animal.type as keyof typeof typeColors
+                            ]?.color,
+                        }}
+                      >
+                        {animal.type}
+                      </span>
+                      <span
+                        className="text-xs px-2 py-0.5 rounded-full text-white"
+                        style={{
+                          backgroundColor:
+                            animal.rarity === "rare"
+                              ? "#dc2626"
+                              : animal.rarity === "uncommon"
+                                ? "#f97316"
+                                : "#10b981",
+                        }}
+                      >
+                        {animal.rarity === "rare"
+                          ? "Raro"
+                          : animal.rarity === "uncommon"
+                            ? "Incomum"
+                            : "Comum"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Possível de ser observado
                     </p>
                   </div>
                 </Popup>
               </Marker>
+            ))}
 
-              {/* Marcadores das observações registradas */}
-              {filteredObservations.map((obs) => (
-                <Marker
-                  key={obs.id}
-                  position={[obs.latitude, obs.longitude]}
-                  icon={createObservationIcon(obs.type)}
-                >
-                  <Popup>
-                    <div className="p-2 sm:p-3 max-w-xs sm:max-w-sm">
-                      {obs.image && (
-                        <img
-                          src={obs.image}
-                          alt={obs.species}
-                          className="w-full h-24 sm:h-32 object-cover rounded mb-2"
-                        />
-                      )}
-                      <p className="font-semibold text-xs sm:text-sm">
-                        {obs.species}
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-2">
-                        {obs.date} às {obs.time}
-                      </p>
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        <span
-                          className="text-xs px-2 py-0.5 rounded-full text-white"
-                          style={{
-                            backgroundColor:
-                              typeColors[
-                                obs.type as keyof typeof typeColors
-                              ]?.color,
-                          }}
-                        >
-                          {obs.type}
-                        </span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">
-                          {obs.confidence}
-                        </span>
-                      </div>
-                      {obs.notes && (
-                        <p className="text-xs text-foreground line-clamp-2">
-                          {obs.notes}
-                        </p>
-                      )}
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
+            <MapCenterController
+              latitude={userLocation.latitude}
+              longitude={userLocation.longitude}
+            />
+          </MapContainer>
 
-              {/* Marcadores dos animais nas redondezas */}
-              {filteredAnimals.map((animal) => (
-                <Marker
-                  key={animal.id}
-                  position={[animal.latitude, animal.longitude]}
-                  icon={createAnimalIcon(animal.type, animal.rarity)}
-                >
-                  <Popup>
-                    <div className="p-2">
-                      <p className="font-semibold text-xs sm:text-sm">
-                        {animal.name}
-                      </p>
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        <span
-                          className="text-xs px-2 py-0.5 rounded-full text-white"
-                          style={{
-                            backgroundColor:
-                              typeColors[
-                                animal.type as keyof typeof typeColors
-                              ]?.color,
-                          }}
-                        >
-                          {animal.type}
-                        </span>
-                        <span
-                          className="text-xs px-2 py-0.5 rounded-full text-white"
-                          style={{
-                            backgroundColor:
-                              animal.rarity === "rare"
-                                ? "#dc2626"
-                                : animal.rarity === "uncommon"
-                                  ? "#f97316"
-                                  : "#10b981",
-                          }}
-                        >
-                          {animal.rarity === "rare"
-                            ? "Raro"
-                            : animal.rarity === "uncommon"
-                              ? "Incomum"
-                              : "Comum"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        Possível de ser observado
-                      </p>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-
-              <MapCenterController
-                latitude={userLocation.latitude}
-                longitude={userLocation.longitude}
-              />
-            </MapContainer>
-
-            {/* Controles Sobrepostos Mobile */}
-            <div className="lg:hidden absolute top-3 left-3 z-20">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => navigate("/home")}
-                className="bg-white/90 backdrop-blur-md hover:bg-white shadow-md"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-            </div>
-
-            {/* Painel Flutuante Mobile */}
-            {showMobileControls && (
-              <div className="lg:hidden absolute bottom-4 right-4 z-20 bg-white/95 backdrop-blur-md rounded-2xl border border-border shadow-lg p-4 max-w-xs">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-sm text-foreground">
-                    Filtros
-                  </h3>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => setShowMobileControls(false)}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  {Object.keys(typeColors).map((type) => (
-                    <label
-                      key={type}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedTypes.has(type)}
-                        onChange={() => toggleTypeFilter(type)}
-                        className="w-4 h-4 rounded flex-shrink-0"
-                      />
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <div
-                          className="w-3 h-3 rounded-full flex-shrink-0"
-                          style={{
-                            backgroundColor:
-                              typeColors[type as keyof typeof typeColors]?.color,
-                          }}
-                        ></div>
-                        <span className="text-xs text-foreground">{type}</span>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Botão Flutuante para Abrir Controles Mobile */}
-            {!showMobileControls && (
-              <button
-                onClick={() => setShowMobileControls(true)}
-                className="lg:hidden absolute bottom-4 right-4 z-20 bg-primary text-white rounded-full p-3 shadow-lg hover:bg-primary/90 transition-colors"
-                aria-label="Abrir filtros"
-              >
-                <svg
-                  className="w-6 h-6"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
-                  />
-                </svg>
-              </button>
-            )}
+          {/* Botão Voltar Mobile */}
+          <div className="absolute top-4 left-4 z-[999]">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/home")}
+              className="bg-white/90 backdrop-blur-md hover:bg-white shadow-lg rounded-full w-10 h-10"
+            >
+              <ArrowLeft className="w-5 h-5 text-foreground" />
+            </Button>
           </div>
 
-          {/* Painel Lateral Desktop */}
-          <div className="hidden lg:block lg:col-span-1 space-y-4 sm:lg:space-y-6">
-            {/* Filtros Desktop */}
-            <div className="bg-card rounded-2xl border border-border p-6">
-              <h3 className="font-semibold text-base text-foreground mb-4">
-                Filtros
-              </h3>
+          {/* Painel Flutuante Mobile */}
+          {showMobileControls && (
+            <div className="absolute bottom-4 right-4 z-[999] bg-white/95 backdrop-blur-md rounded-2xl border border-border shadow-lg p-4 max-w-xs">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-sm text-foreground">
+                  Filtros
+                </h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setShowMobileControls(false)}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
 
               <div className="space-y-2">
                 {Object.keys(typeColors).map((type) => (
@@ -572,43 +484,279 @@ export default function MapPage() {
                     />
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <div
-                        className="w-4 h-4 rounded-full flex-shrink-0"
+                        className="w-3 h-3 rounded-full flex-shrink-0"
                         style={{
                           backgroundColor:
                             typeColors[type as keyof typeof typeColors]?.color,
                         }}
                       ></div>
-                      <span className="text-sm text-foreground">{type}</span>
+                      <span className="text-xs text-foreground">{type}</span>
                     </div>
                   </label>
                 ))}
               </div>
             </div>
+          )}
 
-            {/* Legenda Desktop */}
-            <div className="bg-card rounded-2xl border border-border p-6">
-              <h3 className="font-semibold text-base text-foreground mb-4">
-                Legenda
-              </h3>
+          {/* Botão Flutuante para Abrir Controles Mobile */}
+          {!showMobileControls && (
+            <button
+              onClick={() => setShowMobileControls(true)}
+              className="absolute bottom-4 right-4 z-[999] bg-primary text-white rounded-full p-3 shadow-lg hover:bg-primary/90 transition-colors"
+              aria-label="Abrir filtros"
+            >
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
 
-              <div className="space-y-3">
-                {Object.entries(typeColors).map(([type, colors]) => (
-                  <div
-                    key={type}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors"
+      {/* Desktop View */}
+      <div className="hidden lg:flex min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex-col">
+        {/* Desktop Header */}
+        <div className="bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-10">
+          <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4 min-w-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate("/home")}
+                className="flex-shrink-0"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <div className="min-w-0">
+                <h1 className="text-2xl font-bold text-foreground truncate">
+                  Mapa
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  Explore animais aquáticos nas redondezas
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+          <div className="grid grid-cols-4 gap-6">
+            {/* Mapa Desktop */}
+            <div className="col-span-3 relative h-[600px] rounded-2xl border border-border overflow-hidden">
+              <MapContainer
+                center={[userLocation.latitude, userLocation.longitude]}
+                zoom={15}
+                style={{ width: "100%", height: "100%" }}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+
+                {/* Círculo de alcance do usuário */}
+                <Circle
+                  center={[userLocation.latitude, userLocation.longitude]}
+                  radius={5000}
+                  pathOptions={{
+                    color: "rgba(59, 130, 246, 0.3)",
+                    fillColor: "rgba(59, 130, 246, 0.1)",
+                    weight: 2,
+                  }}
+                />
+
+                {/* Marcador da localização do usuário */}
+                <Marker
+                  position={[userLocation.latitude, userLocation.longitude]}
+                  icon={L.icon({
+                    iconUrl: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PGNpcmNsZSBjeD0iMTIiIGN5PSIxMiIgcj0iOCIgZmlsbD0iIzNiODJmNiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjQiIGZpbGw9IiNmZmYiLz48L3N2Zz4=",
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16],
+                    popupAnchor: [0, -16],
+                  })}
+                >
+                  <Popup>
+                    <div className="p-2">
+                      <p className="font-semibold text-sm">Sua Localização</p>
+                      <p className="text-xs text-muted-foreground">
+                        {userLocation.latitude.toFixed(4)}, 
+                        {userLocation.longitude.toFixed(4)}
+                      </p>
+                    </div>
+                  </Popup>
+                </Marker>
+
+                {/* Marcadores das observações registradas */}
+                {filteredObservations.map((obs) => (
+                  <Marker
+                    key={obs.id}
+                    position={[obs.latitude, obs.longitude]}
+                    icon={createObservationIcon(obs.type)}
                   >
-                    <div
-                      className="w-4 h-4 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: colors.color }}
-                    ></div>
-                    <span className="text-sm text-foreground">{type}</span>
-                  </div>
+                    <Popup>
+                      <div className="p-3 max-w-sm">
+                        {obs.image && (
+                          <img
+                            src={obs.image}
+                            alt={obs.species}
+                            className="w-full h-32 object-cover rounded mb-2"
+                          />
+                        )}
+                        <p className="font-semibold text-sm">{obs.species}</p>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          {obs.date} às {obs.time}
+                        </p>
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          <span
+                            className="text-xs px-2 py-1 rounded-full text-white"
+                            style={{
+                              backgroundColor:
+                                typeColors[
+                                  obs.type as keyof typeof typeColors
+                                ]?.color,
+                            }}
+                          >
+                            {obs.type}
+                          </span>
+                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100">
+                            {obs.confidence}
+                          </span>
+                        </div>
+                        {obs.notes && (
+                          <p className="text-xs text-foreground">
+                            {obs.notes}
+                          </p>
+                        )}
+                      </div>
+                    </Popup>
+                  </Marker>
                 ))}
+
+                {/* Marcadores dos animais nas redondezas */}
+                {filteredAnimals.map((animal) => (
+                  <Marker
+                    key={animal.id}
+                    position={[animal.latitude, animal.longitude]}
+                    icon={createAnimalIcon(animal.type, animal.rarity)}
+                  >
+                    <Popup>
+                      <div className="p-2">
+                        <p className="font-semibold text-sm">{animal.name}</p>
+                        <div className="flex gap-2 mt-2">
+                          <span
+                            className="text-xs px-2 py-1 rounded-full text-white"
+                            style={{
+                              backgroundColor:
+                                typeColors[
+                                  animal.type as keyof typeof typeColors
+                                ]?.color,
+                            }}
+                          >
+                            {animal.type}
+                          </span>
+                          <span
+                            className="text-xs px-2 py-1 rounded-full text-white"
+                            style={{
+                              backgroundColor:
+                                animal.rarity === "rare"
+                                  ? "#dc2626"
+                                  : animal.rarity === "uncommon"
+                                    ? "#f97316"
+                                    : "#10b981",
+                            }}
+                          >
+                            {animal.rarity === "rare"
+                              ? "Raro"
+                              : animal.rarity === "uncommon"
+                                ? "Incomum"
+                                : "Comum"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Possível de ser observado
+                        </p>
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+
+                <MapCenterController
+                  latitude={userLocation.latitude}
+                  longitude={userLocation.longitude}
+                />
+              </MapContainer>
+            </div>
+
+            {/* Painel Lateral Desktop */}
+            <div className="col-span-1 space-y-6">
+              {/* Filtros Desktop */}
+              <div className="bg-card rounded-2xl border border-border p-6">
+                <h3 className="font-semibold text-base text-foreground mb-4">
+                  Filtros
+                </h3>
+
+                <div className="space-y-2">
+                  {Object.keys(typeColors).map((type) => (
+                    <label
+                      key={type}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedTypes.has(type)}
+                        onChange={() => toggleTypeFilter(type)}
+                        className="w-4 h-4 rounded flex-shrink-0"
+                      />
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div
+                          className="w-4 h-4 rounded-full flex-shrink-0"
+                          style={{
+                            backgroundColor:
+                              typeColors[type as keyof typeof typeColors]?.color,
+                          }}
+                        ></div>
+                        <span className="text-sm text-foreground">{type}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Legenda Desktop */}
+              <div className="bg-card rounded-2xl border border-border p-6">
+                <h3 className="font-semibold text-base text-foreground mb-4">
+                  Legenda
+                </h3>
+
+                <div className="space-y-3">
+                  {Object.entries(typeColors).map(([type, colors]) => (
+                    <div
+                      key={type}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors"
+                    >
+                      <div
+                        className="w-4 h-4 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: colors.color }}
+                      ></div>
+                      <span className="text-sm text-foreground">{type}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
