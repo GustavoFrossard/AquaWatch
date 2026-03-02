@@ -289,15 +289,15 @@ export default function MapPage() {
 
   if (loading || !userLocation) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex items-center justify-center px-4">
         <div className="text-center">
           <div className="animate-spin mb-4">
-            <MapPin className="w-12 h-12 text-primary mx-auto" />
+            <MapPin className="w-10 h-10 sm:w-12 sm:h-12 text-primary mx-auto" />
           </div>
-          <p className="text-lg font-semibold text-foreground">
+          <p className="text-base sm:text-lg font-semibold text-foreground">
             Localizando você...
           </p>
-          <p className="text-sm text-muted-foreground mt-2">
+          <p className="text-xs sm:text-sm text-muted-foreground mt-2">
             Por favor, aguarde
           </p>
         </div>
@@ -309,18 +309,21 @@ export default function MapPage() {
     <div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5">
       {/* Header */}
       <div className="bg-card/80 backdrop-blur-md border-b border-border sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => navigate("/home")}
+              className="flex-shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">Mapa</h1>
-              <p className="text-xs text-muted-foreground">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-foreground truncate">
+                Mapa
+              </h1>
+              <p className="text-xs text-muted-foreground hidden sm:block">
                 Explore animais aquáticos nas redondezas
               </p>
             </div>
@@ -330,19 +333,19 @@ export default function MapPage() {
 
       {/* Erro de localização */}
       {locationError && (
-        <div className="max-w-6xl mx-auto px-4 mt-4">
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-yellow-800">{locationError}</p>
+        <div className="max-w-6xl mx-auto px-3 sm:px-4 mt-3 sm:mt-4">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 sm:p-4 flex items-start gap-3">
+            <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs sm:text-sm text-yellow-800">{locationError}</p>
           </div>
         </div>
       )}
 
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 sm:gap-6">
           {/* Mapa */}
           <div className="lg:col-span-3">
-            <div className="rounded-2xl border border-border overflow-hidden shadow-lg h-96 lg:h-[600px] bg-white">
+            <div className="rounded-xl sm:rounded-2xl border border-border overflow-hidden shadow-lg h-72 sm:h-96 lg:h-[600px] bg-white">
               <MapContainer
                 center={[userLocation.latitude, userLocation.longitude]}
                 zoom={15}
@@ -393,21 +396,21 @@ export default function MapPage() {
                     icon={createObservationIcon(obs.type)}
                   >
                     <Popup>
-                      <div className="p-3 max-w-sm">
+                      <div className="p-2 sm:p-3 max-w-xs sm:max-w-sm">
                         {obs.image && (
                           <img
                             src={obs.image}
                             alt={obs.species}
-                            className="w-full h-32 object-cover rounded mb-2"
+                            className="w-full h-24 sm:h-32 object-cover rounded mb-2"
                           />
                         )}
-                        <p className="font-semibold text-sm">{obs.species}</p>
+                        <p className="font-semibold text-xs sm:text-sm">{obs.species}</p>
                         <p className="text-xs text-muted-foreground mb-2">
                           {obs.date} às {obs.time}
                         </p>
-                        <div className="flex gap-2 mb-2">
+                        <div className="flex flex-wrap gap-1 mb-2">
                           <span
-                            className="text-xs px-2 py-1 rounded-full text-white"
+                            className="text-xs px-2 py-0.5 rounded-full text-white"
                             style={{
                               backgroundColor:
                                 typeColors[
@@ -417,12 +420,12 @@ export default function MapPage() {
                           >
                             {obs.type}
                           </span>
-                          <span className="text-xs px-2 py-1 rounded-full bg-gray-100">
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">
                             {obs.confidence}
                           </span>
                         </div>
                         {obs.notes && (
-                          <p className="text-xs text-foreground">
+                          <p className="text-xs text-foreground line-clamp-2">
                             {obs.notes}
                           </p>
                         )}
@@ -440,10 +443,10 @@ export default function MapPage() {
                   >
                     <Popup>
                       <div className="p-2">
-                        <p className="font-semibold text-sm">{animal.name}</p>
-                        <div className="flex gap-2 mt-2">
+                        <p className="font-semibold text-xs sm:text-sm">{animal.name}</p>
+                        <div className="flex flex-wrap gap-1 mt-2">
                           <span
-                            className="text-xs px-2 py-1 rounded-full text-white"
+                            className="text-xs px-2 py-0.5 rounded-full text-white"
                             style={{
                               backgroundColor:
                                 typeColors[
@@ -454,7 +457,7 @@ export default function MapPage() {
                             {animal.type}
                           </span>
                           <span
-                            className="text-xs px-2 py-1 rounded-full text-white"
+                            className="text-xs px-2 py-0.5 rounded-full text-white"
                             style={{
                               backgroundColor:
                                 animal.rarity === "rare"
@@ -488,33 +491,35 @@ export default function MapPage() {
           </div>
 
           {/* Painel Lateral - Filtros e Legenda */}
-          <div className="lg:col-span-1 space-y-6">
+          <div className="lg:col-span-1 space-y-4 sm:space-y-6">
             {/* Legenda */}
-            <div className="bg-card rounded-2xl border border-border p-6">
-              <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" />
-                Legenda
+            <div className="bg-card rounded-xl sm:rounded-2xl border border-border p-4 sm:p-6">
+              <h3 className="font-semibold text-sm sm:text-base text-foreground mb-3 sm:mb-4 flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary flex-shrink-0" />
+                <span>Legenda</span>
               </h3>
 
-              <div className="space-y-3">
+              <div className="space-y-2 sm:space-y-3">
                 {Object.entries(typeColors).map(([type, colors]) => (
                   <div
                     key={type}
                     className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors"
                   >
                     <div
-                      className="w-4 h-4 rounded-full"
+                      className="w-3 h-3 sm:w-4 sm:h-4 rounded-full flex-shrink-0"
                       style={{ backgroundColor: colors.color }}
                     ></div>
-                    <span className="text-sm text-foreground">{type}</span>
+                    <span className="text-xs sm:text-sm text-foreground">{type}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Filtros */}
-            <div className="bg-card rounded-2xl border border-border p-6">
-              <h3 className="font-semibold text-foreground mb-4">Filtros</h3>
+            <div className="bg-card rounded-xl sm:rounded-2xl border border-border p-4 sm:p-6">
+              <h3 className="font-semibold text-sm sm:text-base text-foreground mb-3 sm:mb-4">
+                Filtros
+              </h3>
 
               <div className="space-y-2">
                 {Object.keys(typeColors).map((type) => (
@@ -526,21 +531,21 @@ export default function MapPage() {
                       type="checkbox"
                       checked={selectedTypes.has(type)}
                       onChange={() => toggleTypeFilter(type)}
-                      className="w-4 h-4 rounded"
+                      className="w-4 h-4 rounded flex-shrink-0"
                     />
-                    <span className="text-sm text-foreground">{type}</span>
+                    <span className="text-xs sm:text-sm text-foreground">{type}</span>
                   </label>
                 ))}
               </div>
             </div>
 
             {/* Estatísticas */}
-            <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-2xl border border-border p-6">
-              <h3 className="font-semibold text-foreground mb-4">
+            <div className="bg-gradient-to-br from-primary/10 to-secondary/10 rounded-xl sm:rounded-2xl border border-border p-4 sm:p-6">
+              <h3 className="font-semibold text-sm sm:text-base text-foreground mb-3 sm:mb-4">
                 Estatísticas
               </h3>
 
-              <div className="space-y-3 text-sm">
+              <div className="space-y-2 sm:space-y-3 text-xs sm:text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Observações</span>
                   <span className="font-semibold text-foreground">
@@ -553,7 +558,7 @@ export default function MapPage() {
                     {filteredAnimals.length}
                   </span>
                 </div>
-                <div className="flex justify-between pt-3 border-t border-border">
+                <div className="flex justify-between pt-2 sm:pt-3 border-t border-border">
                   <span className="text-muted-foreground">Total</span>
                   <span className="font-semibold text-foreground">
                     {filteredObservations.length + filteredAnimals.length}
