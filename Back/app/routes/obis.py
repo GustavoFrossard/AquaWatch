@@ -1,13 +1,20 @@
+import base64
 import json
+import logging
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.parse import quote, urlencode
+from urllib.request import urlopen, Request
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+from app import common_names as cn
+from app.config import settings
 
 router = APIRouter(prefix="/api/obis", tags=["obis"])
 
@@ -261,8 +268,11 @@ def _to_point(item: dict[str, Any], fallback_idx: int) -> dict[str, Any] | None:
         return None
 
     scientific_name = item.get("scientificName") or item.get("species") or "Fish"
+    # Try the Portuguese common name from our cache first,
+    # then fall back to whatever OBIS provides
     common_name = (
-        item.get("vernacularName")
+        cn.get(scientific_name)
+        or item.get("vernacularName")
         or item.get("commonName")
     )
     dataset_name = item.get("datasetName")
@@ -306,6 +316,10 @@ def _points_for_tile(z: int, x: int, y: int, zoom: int) -> tuple[list[dict[str, 
             break
 
     _write_tile_cache(z, x, y, points)
+
+    # Queue scientific names for background Portuguese common-name resolution
+    cn.queue_batch([p["scientificName"] for p in points])
+
     return points, False
 
 
@@ -359,6 +373,12 @@ def fish_occurrences(
         cached_meta = dict(cached_response.get("meta", {}))
         cached_meta["cached"] = True
         cached_response["meta"] = cached_meta
+        # Enrich cached response with any newly resolved PT names
+        for point in cached_response.get("points", []):
+            if not point.get("commonName"):
+                pt_name = cn.get(point.get("scientificName", ""))
+                if pt_name:
+                    point["commonName"] = pt_name
         return cached_response
 
     bbox_area = (max_lng - min_lng) * (max_lat - min_lat)
@@ -410,6 +430,11 @@ def fish_occurrences(
     points = _thin_render(deduped, zoom)
     for point in points:
         point.pop("aphiaId", None)
+        # Enrich with Portuguese common names from cache (even for tile-cached points)
+        if not point.get("commonName"):
+            pt_name = cn.get(point.get("scientificName", ""))
+            if pt_name:
+                point["commonName"] = pt_name
 
     response = {
         "points": points,
@@ -429,3 +454,316 @@ def fish_occurrences(
 
     _response_cache[cache_key] = (now, response)
     return response
+
+
+@router.get("/common-names/stats")
+def common_name_stats():
+    """Return stats about the Portuguese common-name cache."""
+    return cn.stats()
+
+
+# ---------------------------------------------------------------------------
+# Species detail cache (in-memory, TTL 1 hour)
+# ---------------------------------------------------------------------------
+_species_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+_SPECIES_TTL = 60 * 60  # 1 hour
+
+import logging as _logging
+_sp_log = _logging.getLogger("species_detail")
+
+
+def _worms_image(scientific_name: str) -> str | None:
+    """Get species image URL from WoRMS via AphiaID → image endpoint."""
+    try:
+        aphia_url = f"https://www.marinespecies.org/rest/AphiaIDByName/{quote(scientific_name)}?marine_only=true"
+        with urlopen(aphia_url, timeout=5) as resp:
+            aphia_id = int(resp.read().decode("utf-8").strip())
+            if aphia_id <= 0:
+                return None
+    except Exception as e:
+        _sp_log.debug("WoRMS AphiaID failed for %s: %s", scientific_name, e)
+        return None
+
+    try:
+        img_url = f"https://www.marinespecies.org/rest/AphiaImagesByAphiaID/{aphia_id}"
+        with urlopen(img_url, timeout=5) as resp:
+            images = json.loads(resp.read().decode("utf-8"))
+            if isinstance(images, list) and images:
+                url = images[0].get("url") or images[0].get("good_image")
+                if url:
+                    _sp_log.debug("WoRMS image found for %s", scientific_name)
+                return url
+    except Exception as e:
+        _sp_log.debug("WoRMS image failed for %s: %s", scientific_name, e)
+    return None
+
+
+def _inaturalist_image(scientific_name: str) -> str | None:
+    """Get species image from iNaturalist (fallback)."""
+    try:
+        url = f"https://api.inaturalist.org/v1/taxa?q={quote(scientific_name)}&per_page=1"
+        with urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            results = data.get("results", [])
+            if results:
+                photo = results[0].get("default_photo")
+                if photo:
+                    img = photo.get("medium_url") or photo.get("square_url")
+                    if img:
+                        _sp_log.debug("iNaturalist image found for %s", scientific_name)
+                    return img
+    except Exception as e:
+        _sp_log.debug("iNaturalist failed for %s: %s", scientific_name, e)
+    return None
+
+
+def _get_image(scientific_name: str) -> str | None:
+    """Try WoRMS then iNaturalist for species image."""
+    return _worms_image(scientific_name) or _inaturalist_image(scientific_name)
+
+
+def _gemini_species_info(scientific_name: str, common_name: str | None) -> dict[str, Any]:
+    """Get species description and conservation info from Gemini."""
+    api_key = settings.gemini_api_key
+    if not api_key:
+        _sp_log.warning("No Gemini API key")
+        return {}
+
+    display_name = common_name or scientific_name
+
+    prompt = (
+        f"Forneça informações sobre o peixe {scientific_name}"
+        f"{f' ({display_name})' if common_name else ''}. "
+        "Responda SOMENTE com um JSON válido com estes campos:\n"
+        '{\n'
+        '  "descricao": "descrição geral de 2-3 frases em português brasileiro",\n'
+        '  "tamanho": "tamanho médio/máximo (ex: 30-60 cm)",\n'
+        '  "habitat": "onde vive (ex: Recifes de coral e costões rochosos)",\n'
+        '  "alimentacao": "do que se alimenta, frase curta",\n'
+        '  "conservacao": "status IUCN (Pouco preocupante / Vulnerável / Em perigo / Criticamente em perigo / Dados insuficientes)",\n'
+        '  "conservacao_detalhe": "ameaças, pesca e situação no Brasil, 2-3 frases",\n'
+        '  "curiosidade": "fato interessante, 1-2 frases"\n'
+        '}\n'
+        "Sem explicações, sem markdown, apenas o JSON."
+    )
+
+    # Try multiple models — fastest first, then fallbacks
+    _MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+
+    payload = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json",
+        },
+    }).encode("utf-8")
+
+    for model in _MODELS:
+        model_url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={api_key}"
+        )
+        for attempt in range(2):
+            req = Request(
+                model_url, data=payload,
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            try:
+                with urlopen(req, timeout=20) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                text = text.strip()
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[-1]
+                    if text.endswith("```"):
+                        text = text[:-3]
+                    text = text.strip()
+                result = json.loads(text)
+                _sp_log.info("Gemini [%s] info OK for %s (%d fields)", model, scientific_name, len(result))
+                return result
+            except HTTPError as e:
+                _sp_log.warning("Gemini [%s] HTTP %d for %s (attempt %d)", model, e.code, scientific_name, attempt + 1)
+                if e.code == 429:
+                    if attempt == 0:
+                        time.sleep(5)
+                        continue
+                    break  # try next model
+                break
+            except Exception as e:
+                _sp_log.warning("Gemini [%s] error for %s (attempt %d): %s", model, scientific_name, attempt + 1, e)
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+                break
+
+    return {}
+
+
+@router.get("/species/{scientific_name:path}")
+def species_detail(scientific_name: str):
+    """
+    Full species detail: photo, names, description, conservation.
+    Runs image fetch and Gemini info in PARALLEL for speed.
+    Results cached for 1 hour.
+    """
+    key = scientific_name.lower().strip()
+    now = time.time()
+
+    cached = _species_cache.get(key)
+    if cached and now - cached[0] < _SPECIES_TTL:
+        return cached[1]
+
+    common_name = cn.get(scientific_name)
+
+    _sp_log.info("Fetching species detail for %s …", scientific_name)
+    t0 = time.time()
+
+    # Run image and Gemini lookups in PARALLEL
+    image_url = None
+    info = {}
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        img_future = pool.submit(_get_image, scientific_name)
+        info_future = pool.submit(_gemini_species_info, scientific_name, common_name)
+
+        try:
+            image_url = img_future.result(timeout=12)
+        except Exception:
+            image_url = None
+
+        try:
+            info = info_future.result(timeout=22)
+        except Exception:
+            info = {}
+
+    elapsed = time.time() - t0
+    _sp_log.info("Species detail for %s done in %.1fs (image=%s, fields=%d)",
+                 scientific_name, elapsed, bool(image_url), len(info))
+
+    result = {
+        "scientificName": scientific_name,
+        "commonName": common_name,
+        "imageUrl": image_url,
+        "descricao": info.get("descricao"),
+        "tamanho": info.get("tamanho"),
+        "habitat": info.get("habitat"),
+        "alimentacao": info.get("alimentacao"),
+        "conservacao": info.get("conservacao"),
+        "conservacao_detalhe": info.get("conservacao_detalhe"),
+        "curiosidade": info.get("curiosidade"),
+    }
+
+    # Only cache for the full TTL when Gemini actually returned data.
+    # For failed/empty responses, use a short TTL (2 min) so retries happen soon.
+    has_gemini_data = bool(info)
+    ttl = _SPECIES_TTL if has_gemini_data else 120
+    _species_cache[key] = (now + ttl - _SPECIES_TTL, result)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Fish identification from photo via Gemini Vision
+# ---------------------------------------------------------------------------
+_id_log = logging.getLogger("aquawatch.identify")
+
+_IDENTIFY_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+
+
+class IdentifyRequest(BaseModel):
+    image: str  # base64 data-URI or raw base64
+
+
+def _strip_data_uri(data_uri: str) -> tuple[str, str]:
+    """Return (mime_type, raw_base64) from a data URI or plain base64."""
+    if data_uri.startswith("data:"):
+        header, b64 = data_uri.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+        return mime, b64
+    return "image/jpeg", data_uri
+
+
+@router.post("/identify")
+def identify_fish(body: IdentifyRequest):
+    """
+    Receive a fish photo (base64), send to Gemini Vision to identify
+    the species and return all observation fields pre-filled.
+    """
+    api_key = settings.gemini_api_key
+    if not api_key:
+        raise HTTPException(500, "Gemini API key not configured")
+
+    mime_type, b64_data = _strip_data_uri(body.image)
+
+    prompt = (
+        "Analise esta foto de peixe e identifique a espécie. "
+        "Responda SOMENTE com um JSON válido com estes campos:\n"
+        '{\n'
+        '  "nomeCientifico": "nome científico da espécie",\n'
+        '  "nomeComum": "nome popular em português brasileiro (ou null se desconhecido)",\n'
+        '  "descricao": "descrição geral de 2-3 frases em português brasileiro",\n'
+        '  "tamanho": "tamanho médio/máximo (ex: 30-60 cm)",\n'
+        '  "habitat": "onde vive (ex: Recifes de coral e costões rochosos)",\n'
+        '  "alimentacao": "do que se alimenta, frase curta",\n'
+        '  "conservacao": "status IUCN (Pouco preocupante / Vulnerável / Em perigo / Criticamente em perigo / Dados insuficientes)",\n'
+        '  "conservacao_detalhe": "ameaças e situação no Brasil, 2-3 frases",\n'
+        '  "curiosidade": "fato interessante, 1-2 frases",\n'
+        '  "confianca": "alta / media / baixa (o quanto tem certeza da identificação)"\n'
+        '}\n'
+        "Se não for um peixe ou não conseguir identificar, retorne "
+        '{"erro": "descrição do problema"}.\n'
+        "Sem explicações, sem markdown, apenas o JSON."
+    )
+
+    payload = json.dumps({
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {"inline_data": {"mime_type": mime_type, "data": b64_data}},
+            ],
+        }],
+        "generationConfig": {
+            "temperature": 0.2,
+            "responseMimeType": "application/json",
+        },
+    }).encode("utf-8")
+
+    t0 = time.time()
+    for model in _IDENTIFY_MODELS:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent?key={api_key}"
+        )
+        for attempt in range(2):
+            req = Request(url, data=payload,
+                          headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                text = text.strip()
+                if text.startswith("```"):
+                    text = text.split("\n", 1)[-1]
+                    if text.endswith("```"):
+                        text = text[:-3]
+                    text = text.strip()
+                result = json.loads(text)
+                elapsed = time.time() - t0
+                _id_log.info("Identified via [%s] in %.1fs: %s",
+                             model, elapsed, result.get("nomeCientifico", "?"))
+                return result
+            except HTTPError as e:
+                _id_log.warning("Identify [%s] HTTP %d (attempt %d)", model, e.code, attempt + 1)
+                if e.code == 429:
+                    if attempt == 0:
+                        time.sleep(3)
+                        continue
+                    break
+                break
+            except Exception as e:
+                _id_log.warning("Identify [%s] error (attempt %d): %s", model, attempt + 1, e)
+                if attempt == 0:
+                    time.sleep(2)
+                    continue
+                break
+
+    raise HTTPException(503, "Não foi possível identificar o peixe no momento. Tente novamente.")

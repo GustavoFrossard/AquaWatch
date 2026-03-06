@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, ZoomControl, useMap, useMapEvents, } from "react-leaflet";
 import L from "leaflet";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, MapPin, X } from "lucide-react";
+import { ArrowLeft, MapPin, X, Info, Loader2 } from "lucide-react";
+import FishDetailModal from "@/components/FishDetailModal";
 // Configuração de ícones do Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -72,10 +73,12 @@ const typeColors = {
     Coral: { color: "#ec4899", bgColor: "#fce7f3" },
     Invasive: { color: "#ef4444", bgColor: "#fee2e2" },
     Other: { color: "#f59e0b", bgColor: "#fef3c7" },
+    "Observação": { color: "#10b981", bgColor: "#d1fae5" },
 };
 // Criar ícone customizado para observações
 function createObservationIcon(type) {
     const colors = typeColors[type] || typeColors.Other;
+    const emoji = type === "Observação" ? "🐟" : "📍";
     return L.divIcon({
         html: `
       <div style="
@@ -91,7 +94,7 @@ function createObservationIcon(type) {
         font-size: 14px;
         color: ${colors.color};
       ">
-        📍
+        ${emoji}
       </div>
     `,
         className: "custom-icon",
@@ -106,10 +109,12 @@ export default function MapPage() {
     const [observations, setObservations] = useState([]);
     const [user, setUser] = useState(null);
     const [fishPoints, setFishPoints] = useState([]);
-    const [selectedTypes, setSelectedTypes] = useState(new Set(["Fish", "Mammal", "Coral", "Invasive", "Other"]));
+    const [selectedTypes, setSelectedTypes] = useState(new Set(["Fish", "Mammal", "Coral", "Invasive", "Other", "Observação"]));
     const [loading, setLoading] = useState(true);
     const [showMobileControls, setShowMobileControls] = useState(true);
     const [viewport, setViewport] = useState(null);
+    const [selectedFish, setSelectedFish] = useState(null);
+    const [loadingFishDetail, setLoadingFishDetail] = useState(false);
     const fishCacheRef = useRef(new Map());
     const fishRenderer = useMemo(() => L.canvas({ padding: 0.2 }), []);
     const isCoarsePointer = useMemo(() => {
@@ -129,8 +134,25 @@ export default function MapPage() {
         if (savedObservations) {
             setObservations(JSON.parse(savedObservations));
         }
-        // Obtém a localização do usuário
-        if (navigator.geolocation) {
+        // Check if native coords were passed via URL params (from mobile app)
+        // Save to localStorage so they persist across internal navigation
+        const params = new URLSearchParams(window.location.search);
+        const paramLat = parseFloat(params.get("nativeLat"));
+        const paramLng = parseFloat(params.get("nativeLng"));
+
+        if (!isNaN(paramLat) && !isNaN(paramLng)) {
+            localStorage.setItem("nativeCoords", JSON.stringify({ latitude: paramLat, longitude: paramLng }));
+        }
+
+        const stored = localStorage.getItem("nativeCoords");
+        const nativeCoords = stored ? JSON.parse(stored) : null;
+
+        if (nativeCoords && !isNaN(nativeCoords.latitude) && !isNaN(nativeCoords.longitude)) {
+            // Use native coords from mobile app
+            setUserLocation(nativeCoords);
+            setLoading(false);
+        } else if (navigator.geolocation) {
+            // Fallback to browser geolocation
             navigator.geolocation.getCurrentPosition((position) => {
                 const { latitude, longitude } = position.coords;
                 setUserLocation({ latitude, longitude });
@@ -322,8 +344,15 @@ export default function MapPage() {
                 <Popup>
                   <div className="p-2 max-w-xs">
                     {obs.image && (<img src={obs.image} alt={obs.species} className="w-full h-24 object-cover rounded mb-2"/>)}
-                    <p className="font-semibold text-xs">{obs.species}</p>
-                    <p className="text-xs text-muted-foreground mb-2">
+                    {obs.nomeComum ? (
+                      <p className="font-semibold text-xs">{obs.nomeComum}</p>
+                    ) : (
+                      <p className="font-semibold text-xs">{obs.species}</p>
+                    )}
+                    {obs.nomeCientifico && (
+                      <p className="text-xs text-muted-foreground italic">{obs.nomeCientifico}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1 mb-2">
                       {obs.date} às {obs.time}
                     </p>
                     <div className="flex flex-wrap gap-1 mb-2">
@@ -332,13 +361,44 @@ export default function MapPage() {
             }}>
                         {obs.type}
                       </span>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">
-                        {obs.confidence}
-                      </span>
+                      {obs.confidence && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100">
+                          {obs.confidence}
+                        </span>
+                      )}
                     </div>
+                    {obs.descricao && (
+                      <p className="text-xs text-foreground line-clamp-2 mb-2">{obs.descricao}</p>
+                    )}
                     {obs.notes && (<p className="text-xs text-foreground line-clamp-2">
                         {obs.notes}
                       </p>)}
+                    {obs.nomeCientifico && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedFish({
+                            scientificName: obs.nomeCientifico,
+                            commonName: obs.nomeComum,
+                            preloadedData: {
+                              commonName: obs.nomeComum,
+                              imageUrl: obs.image,
+                              descricao: obs.descricao,
+                              tamanho: obs.tamanho,
+                              habitat: obs.habitat,
+                              alimentacao: obs.alimentacao,
+                              conservacao: obs.conservacao,
+                              conservacao_detalhe: obs.conservacao_detalhe,
+                              curiosidade: obs.curiosidade,
+                            },
+                          });
+                        }}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 bg-primary text-white text-xs font-medium py-1.5 px-3 rounded-lg hover:bg-primary/90 active:scale-95 transition-all"
+                      >
+                        <Info className="w-3.5 h-3.5" />
+                        Saber mais
+                      </button>
+                    )}
                   </div>
                 </Popup>
               </Marker>))}
@@ -364,6 +424,29 @@ export default function MapPage() {
                     <p className="text-xs text-muted-foreground mt-1">
                       {fish.lat.toFixed(4)}, {fish.lng.toFixed(4)}
                     </p>
+                    {fish.scientificName && fish.scientificName !== "Fish" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLoadingFishDetail(true);
+                          setSelectedFish(fish);
+                        }}
+                        disabled={loadingFishDetail}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 bg-primary text-white text-xs font-medium py-1.5 px-3 rounded-lg hover:bg-primary/90 active:scale-95 transition-all disabled:opacity-70"
+                      >
+                        {loadingFishDetail && selectedFish?.scientificName === fish.scientificName ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Carregando…
+                          </>
+                        ) : (
+                          <>
+                            <Info className="w-3.5 h-3.5" />
+                            Saber mais
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </Popup>
               </CircleMarker>))}
@@ -411,6 +494,17 @@ export default function MapPage() {
               </svg>
             </button>)}
         </div>
+
+        {/* Fish detail modal */}
+        {selectedFish && (
+          <FishDetailModal
+            scientificName={selectedFish.scientificName}
+            commonName={selectedFish.commonName}
+            preloadedData={selectedFish.preloadedData}
+            onClose={() => { setSelectedFish(null); setLoadingFishDetail(false); }}
+            onLoaded={() => setLoadingFishDetail(false)}
+          />
+        )}
       </div>
     </>);
 }

@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "AquaWatch",
+    "slug": "aquawatch-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#eff9ff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.aquawatch.mobile",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "O AquaWatch precisa da sua localização para mostrar observações próximas no mapa."
+      }
+    },
+    "android": {
+      "package": "com.aquawatch.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0ea5e9"
+      },
+      "permissions": ["ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "O AquaWatch precisa da sua localização para mostrar observações próximas no mapa."
+        }
+      ]
+    ],
+    "extra": {
+      "webAppUrl": "http://192.168.15.4:8080"
+    }
+  }
+}

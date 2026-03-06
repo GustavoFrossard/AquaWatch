@@ -5,6 +5,14 @@ import { getMe } from "@/lib/auth";
 export default function Index() {
     const navigate = useNavigate();
     useEffect(() => {
+        // Persist native mobile coords from URL params before any redirect
+        const params = new URLSearchParams(window.location.search);
+        const nativeLat = parseFloat(params.get("nativeLat"));
+        const nativeLng = parseFloat(params.get("nativeLng"));
+        if (!isNaN(nativeLat) && !isNaN(nativeLng)) {
+            localStorage.setItem("nativeCoords", JSON.stringify({ latitude: nativeLat, longitude: nativeLng }));
+        }
+
         const checkSession = async () => {
             try {
                 const result = await getMe();
