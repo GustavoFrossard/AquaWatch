@@ -536,6 +536,7 @@ def _gemini_species_info(scientific_name: str, common_name: str | None) -> dict[
         f"{f' ({display_name})' if common_name else ''}. "
         "Responda SOMENTE com um JSON válido com estes campos:\n"
         '{\n'
+        '  "nomeComum": "nome popular em português brasileiro (ou null se desconhecido)",\n'
         '  "descricao": "descrição geral de 2-3 frases em português brasileiro",\n'
         '  "tamanho": "tamanho médio/máximo (ex: 30-60 cm)",\n'
         '  "habitat": "onde vive (ex: Recifes de coral e costões rochosos)",\n'
@@ -662,11 +663,27 @@ def species_detail(scientific_name: str):
 
 
 # ---------------------------------------------------------------------------
-# Fish identification from photo via Gemini Vision
+# Fish identification — Gemini Vision (primary) + local model (fallback)
 # ---------------------------------------------------------------------------
 _id_log = logging.getLogger("aquawatch.identify")
 
-_IDENTIFY_MODELS = ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+_IDENTIFY_MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
+
+# Try to load the local trained model
+_local_model_available = False
+try:
+    import sys as _sys
+    _model_dir = str(Path(__file__).resolve().parent.parent.parent.parent / "Model")
+    if _model_dir not in _sys.path:
+        _sys.path.insert(0, _model_dir)
+    from inference import identify as _local_identify, is_model_available as _is_model_available
+    _local_model_available = _is_model_available()
+    if _local_model_available:
+        _id_log.info("Local fish model available — will use as primary identifier")
+    else:
+        _id_log.info("Local model files not found — using Gemini as primary")
+except ImportError:
+    _id_log.info("Local model module not found — using Gemini only")
 
 
 class IdentifyRequest(BaseModel):
@@ -682,17 +699,43 @@ def _strip_data_uri(data_uri: str) -> tuple[str, str]:
     return "image/jpeg", data_uri
 
 
-@router.post("/identify")
-def identify_fish(body: IdentifyRequest):
-    """
-    Receive a fish photo (base64), send to Gemini Vision to identify
-    the species and return all observation fields pre-filled.
-    """
+def _identify_with_local_model(image_b64: str) -> dict | None:
+    """Try to identify using the local trained model, then enrich with Gemini text API."""
+    if not _local_model_available:
+        return None
+    try:
+        result = _local_identify(image_b64)
+        if result and not result.get("erro"):
+            scientific = result.get("nomeCientifico", "")
+            confidence = result.get("_model_confidence", 0)
+            _id_log.info("Identified via [local model]: %s (%.1f%%)", scientific, confidence * 100)
+
+            # Enrich with Gemini text API (cheap, no image, rarely rate-limited)
+            enrichment = _gemini_species_info(scientific, result.get("nomeComum") or None)
+            if enrichment:
+                _id_log.info("Enriched local result with Gemini text data")
+                for key in ("descricao", "tamanho", "habitat", "alimentacao",
+                            "conservacao", "conservacao_detalhe", "curiosidade"):
+                    if enrichment.get(key) and not result.get(key):
+                        result[key] = enrichment[key]
+                # Gemini text may also provide a common name
+                if enrichment.get("nomeComum") and not result.get("nomeComum"):
+                    result["nomeComum"] = enrichment["nomeComum"]
+
+            return result
+        return None
+    except Exception as e:
+        _id_log.warning("Local model error: %s", e)
+        return None
+
+
+def _identify_with_gemini(image_b64: str) -> dict | None:
+    """Try to identify using Gemini Vision API. Returns None on total failure."""
     api_key = settings.gemini_api_key
     if not api_key:
-        raise HTTPException(500, "Gemini API key not configured")
+        return None
 
-    mime_type, b64_data = _strip_data_uri(body.image)
+    mime_type, b64_data = _strip_data_uri(image_b64)
 
     prompt = (
         "Analise esta foto de peixe e identifique a espécie. "
@@ -765,5 +808,26 @@ def identify_fish(body: IdentifyRequest):
                     time.sleep(2)
                     continue
                 break
+    return None
 
+
+@router.post("/identify")
+def identify_fish(body: IdentifyRequest):
+    """
+    Identify a fish from a photo. Strategy:
+      1. Try Gemini Vision API (best for real-world photos)
+      2. Fallback to local trained model (no rate limits, works on specimen-style photos)
+      3. If both fail, return 503
+    """
+    # 1. Gemini (primary — best accuracy on real-world user photos)
+    result = _identify_with_gemini(body.image)
+    if result:
+        return result
+
+    # 2. Local model fallback (works when Gemini is rate-limited)
+    result = _identify_with_local_model(body.image)
+    if result:
+        return result
+
+    # 3. Both failed
     raise HTTPException(503, "Não foi possível identificar o peixe no momento. Tente novamente.")

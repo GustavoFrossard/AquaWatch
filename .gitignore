@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# Environment
+.env
+.env.*
+
+# Model datasets & checkpoints (too large for git)
+Model/datasets/
+Model/checkpoints/*.pth
+Model/train_output.log
+
+# Build outputs
+Front/dist/
+Front/node_modules/
+Mobile/node_modules/
+
+# Misc
+*.log
+train_output.log
+.DS_Store
+Thumbs.db

@@ -152,6 +152,9 @@ export default function CreateObservationPage() {
       setIdentified(false);
 
       try {
+        // Compress image before sending to avoid large payload timeouts
+        const compressed = await compressImage(base64, 800, 0.7);
+
         const browserHost = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
         const apiBase =
           import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ??
@@ -160,7 +163,7 @@ export default function CreateObservationPage() {
         const res = await fetch(`${apiBase}/api/obis/identify`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: base64 }),
+          body: JSON.stringify({ image: compressed }),
         });
 
         if (!res.ok) {

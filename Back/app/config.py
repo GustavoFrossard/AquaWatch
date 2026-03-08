@@ -21,7 +21,7 @@ class Settings:
     admin_username: str = os.getenv("ADMIN_USERNAME", "admin")
     admin_email: str = os.getenv("ADMIN_EMAIL", "admin@aquawatch.com")
     admin_password: str = os.getenv("ADMIN_PASSWORD", "admin123")
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "AIzaSyBUQZ4ot571dKAyGIajw9Ry7g9i-FKMPRg")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
 
 
 settings = Settings()
