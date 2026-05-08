@@ -4,27 +4,27 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ArrowLeft, User as UserIcon, Trophy, Zap, Fish, Award, MapPin, Calendar, Star } from "lucide-react";
 import { computeLevel, levelProgress, getAllBadges, levelTitle, getUnlockedBadgeIds } from "@/lib/gamification";
+import { getObservations, getObservationStats } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function ProfilePage() {
     const navigate = useNavigate();
-    const [user, setUser] = useState(null);
+    const { user } = useAuth();
     const [observations, setObservations] = useState([]);
+    const [stats, setStats] = useState({ total: 0, uniqueSpecies: 0 });
 
     useEffect(() => {
-      const session = localStorage.getItem("userSession");
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-      setUser(JSON.parse(session));
-
-      const saved = localStorage.getItem("observations");
-      if (saved) setObservations(JSON.parse(saved));
-    }, [navigate]);
+      Promise.all([getObservations(), getObservationStats()])
+        .then(([obsResult, statsResult]) => {
+          setObservations(obsResult.observations || []);
+          setStats(statsResult);
+        })
+        .catch(() => setObservations([]));
+    }, []);
 
     if (!user) return null;
 
-    const obsCount = observations.length;
+    const obsCount = stats.total;
     const progress = levelProgress(obsCount);
     const badges = getAllBadges(obsCount);
     const unlockedBadges = badges.filter((b) => b.unlocked);
@@ -34,7 +34,7 @@ export default function ProfilePage() {
     const nextBadge = badges.find((b) => !b.unlocked);
 
     // Species diversity
-    const uniqueSpecies = new Set(observations.map((o) => o.nomeCientifico || o.species).filter(Boolean));
+    const uniqueSpecies = stats.uniqueSpecies;
 
     return (<div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 pb-8">
       {/* Header */}
@@ -75,7 +75,7 @@ export default function ProfilePage() {
           </div>
           <div className="bg-card rounded-2xl border border-border p-4 shadow-sm text-center">
             <Star className="w-5 h-5 text-secondary mx-auto mb-1" />
-            <p className="text-xl font-bold text-foreground">{uniqueSpecies.size}</p>
+            <p className="text-xl font-bold text-foreground">{uniqueSpecies}</p>
             <p className="text-[10px] text-muted-foreground">Espécies</p>
           </div>
         </div>

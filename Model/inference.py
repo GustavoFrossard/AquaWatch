@@ -50,6 +50,47 @@ _inference_transforms = transforms.Compose([
     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
 ])
 
+# TTA augmentations: multiple views of the same image
+_tta_transforms = [
+    # Original center crop
+    transforms.Compose([
+        transforms.Resize(int(IMG_SIZE * 1.1)),
+        transforms.CenterCrop(IMG_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ]),
+    # Horizontal flip
+    transforms.Compose([
+        transforms.Resize(int(IMG_SIZE * 1.1)),
+        transforms.CenterCrop(IMG_SIZE),
+        transforms.RandomHorizontalFlip(p=1.0),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ]),
+    # Slightly larger crop
+    transforms.Compose([
+        transforms.Resize(int(IMG_SIZE * 1.2)),
+        transforms.CenterCrop(IMG_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ]),
+    # Slightly smaller crop (zoom in)
+    transforms.Compose([
+        transforms.Resize(int(IMG_SIZE * 1.0)),
+        transforms.CenterCrop(IMG_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ]),
+    # Flip + different scale
+    transforms.Compose([
+        transforms.Resize(int(IMG_SIZE * 1.2)),
+        transforms.CenterCrop(IMG_SIZE),
+        transforms.RandomHorizontalFlip(p=1.0),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ]),
+]
+
 
 def load_model():
     """Load model + label map once (lazy singleton)."""
@@ -95,9 +136,12 @@ def _decode_image(image_data: str) -> Image.Image:
 
 
 @torch.no_grad()
-def identify(image_b64: str, top_k: int = 3) -> dict:
+def identify(image_b64: str, top_k: int = 3, use_tta: bool = True) -> dict:
     """
     Identify fish species from a base64-encoded image.
+
+    When use_tta=True, runs 5 augmented views and averages probabilities
+    for more robust predictions on real-world photos.
 
     Returns a dict matching the Gemini schema:
       {
@@ -121,12 +165,21 @@ def identify(image_b64: str, top_k: int = 3) -> dict:
     except Exception as e:
         return {"erro": f"Não foi possível decodificar a imagem: {e}"}
 
-    tensor = _inference_transforms(img).unsqueeze(0).to(_device)
+    if use_tta:
+        # Test-Time Augmentation: average predictions across multiple views
+        all_probs = []
+        for tfm in _tta_transforms:
+            tensor = tfm(img).unsqueeze(0).to(_device)
+            with torch.amp.autocast("cuda", enabled=_device.type == "cuda"):
+                logits = _model(tensor)
+            all_probs.append(F.softmax(logits, dim=1)[0])
+        probs = torch.stack(all_probs).mean(dim=0)
+    else:
+        tensor = _inference_transforms(img).unsqueeze(0).to(_device)
+        with torch.amp.autocast("cuda", enabled=_device.type == "cuda"):
+            logits = _model(tensor)
+        probs = F.softmax(logits, dim=1)[0]
 
-    with torch.amp.autocast("cuda", enabled=_device.type == "cuda"):
-        logits = _model(tensor)
-
-    probs = F.softmax(logits, dim=1)[0]
     top_probs, top_idxs = probs.topk(top_k)
 
     best_idx = top_idxs[0].item()

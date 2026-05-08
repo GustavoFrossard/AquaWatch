@@ -2,36 +2,20 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Plus, Map as MapIcon, Trophy, Zap, Fish, LogOut, User as UserIcon, MapPin, Calendar, Award } from "lucide-react";
-import { getMe, logout } from "@/lib/auth";
+import { getObservations } from "@/lib/auth";
 import { computeLevel, levelProgress, getAllBadges, levelTitle, getUnlockedBadgeIds } from "@/lib/gamification";
+import { useAuth } from "@/contexts/AuthContext";
 export default function HomePage() {
     const navigate = useNavigate();
-    const [user, setUser] = useState(null);
+    const { user, logout, updateUser } = useAuth();
     const [observations, setObservations] = useState([]);
     useEffect(() => {
-        const bootstrap = async () => {
-            try {
-                const result = await getMe();
-                setUser(result.user);
-                localStorage.setItem("userSession", JSON.stringify(result.user));
-            }
-            catch {
-                localStorage.removeItem("userSession");
-                navigate("/auth");
-            }
-            const savedObservations = localStorage.getItem("observations");
-            if (savedObservations) {
-                setObservations(JSON.parse(savedObservations));
-            }
-        };
-        bootstrap();
-    }, [navigate]);
+        getObservations()
+            .then((result) => setObservations(result.observations || []))
+            .catch(() => setObservations([]));
+    }, []);
     const handleLogout = async () => {
-        try {
-            await logout();
-        }
-        catch { }
-        localStorage.removeItem("userSession");
+        await logout();
         navigate("/auth");
     };
 
@@ -48,11 +32,9 @@ export default function HomePage() {
       const correctLevel = computeLevel(obsCount);
       const correctBadges = getUnlockedBadgeIds(obsCount);
       if (user.level !== correctLevel || JSON.stringify(user.badges) !== JSON.stringify(correctBadges)) {
-        const synced = { ...user, level: correctLevel, badges: correctBadges };
-        localStorage.setItem("userSession", JSON.stringify(synced));
-        setUser(synced);
+        updateUser({ ...user, level: correctLevel, badges: correctBadges });
       }
-    }, [obsCount, user]);
+    }, [obsCount, user, updateUser]);
 
     if (!user) {
         return null;

@@ -456,6 +456,134 @@ def fish_occurrences(
     return response
 
 
+@router.get("/fish/nearby")
+def fish_nearby(
+    lat: float = Query(..., ge=-90, le=90, description="User latitude"),
+    lng: float = Query(..., ge=-180, le=180, description="User longitude"),
+    radius: int = Query(200, ge=1, le=500, description="Radius in km"),
+):
+    """Return fish occurrences within *radius* km of a point.
+
+    Converts the radius to a bounding box, fetches tiles, then filters
+    points by haversine distance so only those truly inside the circle
+    are returned.
+    """
+    # ~1 degree latitude ≈ 111 km
+    dlat = radius / 111.0
+    # longitude degrees shrink with cos(lat)
+    dlng = radius / (111.0 * max(math.cos(math.radians(lat)), 0.01))
+
+    min_lat_bb = _clamp(lat - dlat, -90, 90)
+    max_lat_bb = _clamp(lat + dlat, -90, 90)
+    min_lng_bb = _clamp(lng - dlng, -180, 180)
+    max_lng_bb = _clamp(lng + dlng, -180, 180)
+
+    # Pick a reasonable tile zoom for a ~200 km box
+    bbox_area = (max_lng_bb - min_lng_bb) * (max_lat_bb - min_lat_bb)
+    tile_zoom = _choose_tile_zoom(7, bbox_area)  # zoom 7 is a good default for 200km
+    tiles = _tiles_for_bbox(min_lng_bb, min_lat_bb, max_lng_bb, max_lat_bb, tile_zoom)
+
+    while len(tiles) > MAX_TILES_PER_REQUEST and tile_zoom > 4:
+        tile_zoom -= 1
+        tiles = _tiles_for_bbox(min_lng_bb, min_lat_bb, max_lng_bb, max_lat_bb, tile_zoom)
+
+    # Check response cache
+    cache_key = f"nearby|{round(lat, 2)}|{round(lng, 2)}|{radius}"
+    now = time.time()
+    cached = _response_cache.get(cache_key)
+    if cached and now - cached[0] < RESPONSE_CACHE_TTL_SECONDS:
+        cached_response = dict(cached[1])
+        cached_meta = dict(cached_response.get("meta", {}))
+        cached_meta["cached"] = True
+        cached_response["meta"] = cached_meta
+        for point in cached_response.get("points", []):
+            if not point.get("commonName"):
+                pt_name = cn.get(point.get("scientificName", ""))
+                if pt_name:
+                    point["commonName"] = pt_name
+        return cached_response
+
+    tile_hits = 0
+    tile_misses = 0
+    merged_points: list[dict[str, Any]] = []
+
+    workers = min(MAX_TILE_WORKERS, max(1, len(tiles)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_points_for_tile, z, x, y, 7): (z, x, y)
+            for (z, x, y) in tiles
+        }
+        for future in as_completed(futures):
+            try:
+                points, hit = future.result()
+            except Exception:
+                points, hit = [], False
+            if hit:
+                tile_hits += 1
+            else:
+                tile_misses += 1
+            if points:
+                merged_points.extend(points)
+
+    # Deduplicate
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for point in merged_points:
+        key = str(point["id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(point)
+
+    # Filter by actual haversine distance
+    radius_m = radius * 1000.0
+    filtered: list[dict[str, Any]] = []
+    for point in deduped:
+        if _haversine_m(lat, lng, point["lat"], point["lng"]) <= radius_m:
+            filtered.append(point)
+
+    # Thin for rendering
+    points = _thin_render(filtered, 7)
+
+    for point in points:
+        point.pop("aphiaId", None)
+        if not point.get("commonName"):
+            pt_name = cn.get(point.get("scientificName", ""))
+            if pt_name:
+                point["commonName"] = pt_name
+
+    response = {
+        "points": points,
+        "meta": {
+            "lat": lat,
+            "lng": lng,
+            "radiusKm": radius,
+            "tileZoom": tile_zoom,
+            "tiles": len(tiles),
+            "tileCacheHits": tile_hits,
+            "tileCacheMisses": tile_misses,
+            "received": len(filtered),
+            "returned": len(points),
+            "taxa": FISH_TAXA,
+            "cached": False,
+        },
+    }
+
+    _response_cache[cache_key] = (now, response)
+    return response
+
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return the great-circle distance in **metres** between two points."""
+    R = 6_371_000  # Earth radius in metres
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 @router.get("/common-names/stats")
 def common_name_stats():
     """Return stats about the Portuguese common-name cache."""

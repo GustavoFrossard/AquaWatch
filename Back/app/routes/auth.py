@@ -1,9 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session
+
 from app.auth import require_auth
 from app.config import settings
+from app.database import get_db
+from app.db_models import UserRow
 from app.models import AuthResponse, LoginRequest, PublicUser, RegisterRequest
 from app.security import create_auth_token, hash_password, verify_password
-from app.store import create_user, find_user_by_email, find_user_by_id
+from app.store import create_user, find_user_by_email, find_user_by_id, get_user_badges
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -18,14 +22,14 @@ def normalize_email(value: str) -> str:
     return email
 
 
-def to_public_user(user) -> PublicUser:
+def to_public_user(user: UserRow) -> PublicUser:
     return PublicUser(
         id=user.id,
         username=user.username,
         email=user.email,
         points=user.points,
         level=user.level,
-        badges=user.badges,
+        badges=get_user_badges(user),
     )
 
 
@@ -34,8 +38,8 @@ def set_auth_cookie(response: Response, token: str) -> None:
         key=settings.auth_cookie_name,
         value=token,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.is_production,
+        samesite="strict" if settings.is_production else "lax",
         max_age=settings.jwt_expires_minutes * 60,
         path="/",
     )
@@ -45,17 +49,17 @@ def clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(
         key=settings.auth_cookie_name,
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=settings.is_production,
+        samesite="strict" if settings.is_production else "lax",
         path="/",
     )
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, response: Response):
+def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     email = normalize_email(payload.email)
 
-    existing = find_user_by_email(email)
+    existing = find_user_by_email(email, db)
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already in use")
 
@@ -63,6 +67,7 @@ def register(payload: RegisterRequest, response: Response):
         username=payload.username.strip(),
         email=email,
         password_hash=hash_password(payload.password),
+        db=db,
     )
 
     token = create_auth_token(user.id, user.email)
@@ -71,9 +76,9 @@ def register(payload: RegisterRequest, response: Response):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(payload: LoginRequest, response: Response):
+def login(payload: LoginRequest, response: Response, db: Session = Depends(get_db)):
     email = normalize_email(payload.email)
-    user = find_user_by_email(email)
+    user = find_user_by_email(email, db)
 
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -90,8 +95,8 @@ def logout(response: Response):
 
 
 @router.get("/me", response_model=AuthResponse)
-def me(user_id: str = Depends(require_auth)):
-    user = find_user_by_id(user_id)
+def me(user_id: str = Depends(require_auth), db: Session = Depends(get_db)):
+    user = find_user_by_id(user_id, db)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 

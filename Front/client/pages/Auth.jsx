@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { Fish, Mail, Lock, User } from "lucide-react";
-import { login, register } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
 export default function AuthPage() {
     const navigate = useNavigate();
     const { toast } = useToast();
+    const { login, register } = useAuth();
     const [isLogin, setIsLogin] = useState(true);
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -17,14 +18,15 @@ export default function AuthPage() {
         e.preventDefault();
         setLoading(true);
         try {
-            const result = isLogin
-                ? await login({ email, password })
-                : await register({
+            if (isLogin) {
+                await login({ email, password });
+            } else {
+                await register({
                     username: username || email.split("@")[0],
                     email,
                     password,
                 });
-            localStorage.setItem("userSession", JSON.stringify(result.user));
+            }
             navigate("/home");
         }
         catch (error) {

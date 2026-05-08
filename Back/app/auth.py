@@ -1,4 +1,5 @@
 from fastapi import Cookie, HTTPException, status
+import jwt
 from app.config import settings
 from app.security import decode_auth_token
 
@@ -16,7 +17,7 @@ def require_auth(auth_token: str | None = Cookie(default=None, alias=settings.au
         if not user_id:
             raise ValueError("Missing sub in token")
         return user_id
-    except Exception as exc:
+    except (jwt.DecodeError, jwt.ExpiredSignatureError, jwt.InvalidTokenError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",

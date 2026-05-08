@@ -5,7 +5,12 @@ import L from "leaflet";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { updateUserAfterObservation, getNewlyUnlockedBadges } from "@/lib/gamification";
+import { updateUserAfterObservation, getNewlyUnlockedBadges, getAllBadges } from "@/lib/gamification";
+import { createObservation } from "@/lib/auth";
+import { API_BASE_URL } from "@/lib/api";
+import { conservationColor } from "@/lib/constants";
+import { compressImage } from "@/lib/image";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   ArrowLeft,
   Camera,
@@ -22,37 +27,7 @@ import {
   RotateCcw,
   Map as MapIcon,
   Crosshair,
-} from "lucide-react";
-
-/**
- * Compress a base64 data-URL image to fit within maxDimension px and quality.
- * Returns a Promise<string> with a smaller data URL (JPEG).
- */
-function compressImage(dataUrl, maxDimension = 800, quality = 0.7) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > maxDimension || height > maxDimension) {
-        if (width > height) {
-          height = Math.round((height * maxDimension) / width);
-          width = maxDimension;
-        } else {
-          width = Math.round((width * maxDimension) / height);
-          height = maxDimension;
-        }
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => resolve(dataUrl); // fallback to original on error
-    img.src = dataUrl;
-  });
-}
+}from "lucide-react";
 
 // Fix leaflet default marker icon
 delete L.Icon.Default.prototype._getIconUrl;
@@ -65,9 +40,9 @@ L.Icon.Default.mergeOptions({
 export default function CreateObservationPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user, updateUser } = useAuth();
   const fileInputRef = useRef(null);
 
-  const [user, setUser] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [identifying, setIdentifying] = useState(false);
   const [identified, setIdentified] = useState(false);
@@ -95,16 +70,6 @@ export default function CreateObservationPage() {
     notes: "",
     image: "",
   });
-
-  // Auth check
-  useEffect(() => {
-    const session = localStorage.getItem("userSession");
-    if (!session) {
-      navigate("/auth");
-    } else {
-      setUser(JSON.parse(session));
-    }
-  }, [navigate]);
 
   // Auto-fill location on mount
   useEffect(() => {
@@ -155,12 +120,7 @@ export default function CreateObservationPage() {
         // Compress image before sending to avoid large payload timeouts
         const compressed = await compressImage(base64, 800, 0.7);
 
-        const browserHost = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
-        const apiBase =
-          import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ??
-          `http://${browserHost}:4000`;
-
-        const res = await fetch(`${apiBase}/api/obis/identify`, {
+        const res = await fetch(`${API_BASE_URL}/api/obis/identify`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ image: compressed }),
@@ -235,18 +195,6 @@ export default function CreateObservationPage() {
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   };
 
-  const conservationColor = (status) => {
-    if (!status) return "bg-gray-100 text-gray-700";
-    const s = status.toLowerCase();
-    if (s.includes("criticamente")) return "bg-red-600 text-white";
-    if (s.includes("perigo")) return "bg-red-500 text-white";
-    if (s.includes("vulnerável")) return "bg-orange-500 text-white";
-    if (s.includes("quase")) return "bg-yellow-500 text-white";
-    if (s.includes("pouco preocupante")) return "bg-green-600 text-white";
-    if (s.includes("dados")) return "bg-gray-400 text-white";
-    return "bg-blue-100 text-blue-800";
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.nomeCientifico) {
@@ -261,59 +209,56 @@ export default function CreateObservationPage() {
     setSubmitting(true);
 
     try {
-      // Compress image for localStorage (keep original quality for display)
-      let storedImage = formData.image;
-      if (storedImage) {
+      // Compress image before uploading to cloud
+      let imageToSend = formData.image;
+      if (imageToSend) {
         try {
-          storedImage = await compressImage(storedImage, 600, 0.6);
+          imageToSend = await compressImage(imageToSend, 800, 0.7);
         } catch {
-          // If compression fails, skip the image to avoid localStorage overflow
-          storedImage = "";
+          imageToSend = "";
         }
       }
 
-      const observation = {
-        id: Math.random().toString(36).substr(2, 9),
-        userId: user?.id || "",
-        ...formData,
-        image: storedImage,
-        type: "Observação",
-        species: formData.nomeComum || formData.nomeCientifico || "Espécie desconhecida",
-        confidence: formData.confianca || "Não avaliado",
-        timestamp: Date.now(),
-      };
+      const result = await createObservation({
+        nomeCientifico: formData.nomeCientifico,
+        nomeComum: formData.nomeComum,
+        descricao: formData.descricao,
+        tamanho: formData.tamanho,
+        habitat: formData.habitat,
+        alimentacao: formData.alimentacao,
+        conservacao: formData.conservacao,
+        conservacao_detalhe: formData.conservacao_detalhe,
+        curiosidade: formData.curiosidade,
+        confianca: formData.confianca,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+        location: formData.location,
+        date: formData.date,
+        time: formData.time,
+        notes: formData.notes,
+        image: imageToSend,
+      });
 
-      const observations = JSON.parse(localStorage.getItem("observations") || "[]");
-      observations.push(observation);
-
-      try {
-        localStorage.setItem("observations", JSON.stringify(observations));
-      } catch (storageErr) {
-        // localStorage full — try without image
-        console.warn("localStorage full, saving without image", storageErr);
-        observation.image = "";
-        observations[observations.length - 1] = observation;
-        localStorage.setItem("observations", JSON.stringify(observations));
+      // Update user session with server-computed gamification
+      if (result.user) {
+        updateUser(result.user);
       }
 
-      if (user) {
-        const newObsCount = observations.length;
-        const oldObsCount = newObsCount - 1;
-        const updatedUser = updateUserAfterObservation(user, newObsCount);
-        localStorage.setItem("userSession", JSON.stringify(updatedUser));
-        setUser(updatedUser);
-
-        // Check for newly unlocked badges
-        const newBadges = getNewlyUnlockedBadges(oldObsCount, newObsCount);
-        if (newBadges.length > 0) {
-          const badgeNames = newBadges.map((b) => `${b.emoji} ${b.name}`).join(", ");
-          setTimeout(() => {
-            toast({
-              title: "🏆 Novo badge desbloqueado!",
-              description: badgeNames,
-            });
-          }, 600);
-        }
+      // Show badge notifications
+      if (result.newBadges && result.newBadges.length > 0) {
+        const allBadges = getAllBadges(0);
+        const badgeNames = result.newBadges
+          .map((id) => {
+            const b = allBadges.find((x) => x.id === id);
+            return b ? `${b.emoji} ${b.name}` : id;
+          })
+          .join(", ");
+        setTimeout(() => {
+          toast({
+            title: "🏆 Novo badge desbloqueado!",
+            description: badgeNames,
+          });
+        }, 600);
       }
 
       toast({
@@ -325,7 +270,7 @@ export default function CreateObservationPage() {
       console.error("Save error:", err);
       toast({
         title: "Erro ao salvar",
-        description: "Não foi possível salvar a observação. Tente novamente.",
+        description: err.message || "Não foi possível salvar a observação. Tente novamente.",
         variant: "destructive",
       });
     } finally {

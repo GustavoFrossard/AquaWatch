@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Fish } from "lucide-react";
-import { getMe } from "@/lib/auth";
+import { useAuth } from "@/contexts/AuthContext";
 export default function Index() {
     const navigate = useNavigate();
+    const { user, loading } = useAuth();
+
     useEffect(() => {
         // Persist native mobile coords from URL params before any redirect
         const params = new URLSearchParams(window.location.search);
@@ -12,20 +14,13 @@ export default function Index() {
         if (!isNaN(nativeLat) && !isNaN(nativeLng)) {
             localStorage.setItem("nativeCoords", JSON.stringify({ latitude: nativeLat, longitude: nativeLng }));
         }
+    }, []);
 
-        const checkSession = async () => {
-            try {
-                const result = await getMe();
-                localStorage.setItem("userSession", JSON.stringify(result.user));
-                navigate("/home", { replace: true });
-            }
-            catch {
-                localStorage.removeItem("userSession");
-                navigate("/auth", { replace: true });
-            }
-        };
-        checkSession();
-    }, [navigate]);
+    useEffect(() => {
+        if (loading) return;
+        navigate(user ? "/home" : "/auth", { replace: true });
+    }, [user, loading, navigate]);
+
     // Show loading state while redirecting
     return (<div className="min-h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex items-center justify-center">
       <div className="text-center">

@@ -35,9 +35,17 @@ TRAIN_DIR = UNIFIED_DIR / "train"
 VAL_DIR = UNIFIED_DIR / "val"
 LABEL_MAP_PATH = UNIFIED_DIR / "label_map.json"
 
-MIN_IMAGES_PER_CLASS = 5   # skip species with fewer images
+MIN_IMAGES_PER_CLASS = 15   # skip species with fewer images
+MAX_IMAGES_PER_CLASS = 300  # cap to reduce imbalance
 VAL_RATIO = 0.15
 SEED = 42
+
+# Non-fish or junk labels to exclude
+EXCLUDE_LABELS = {
+    "shrimp", "crab", "lobster", "squid", "octopus", "jellyfish",
+    "starfish", "seahorse", "turtle", "whale", "dolphin", "seal",
+    "unknown", "background", "empty", "gobiidae",  # family-level, not species
+}
 
 random.seed(SEED)
 
@@ -310,8 +318,17 @@ def unify_datasets(all_class_images: list[dict[str, list[Path]]]):
                 unique.append(img)
         merged[label] = unique
 
-    # Filter out tiny classes
-    filtered = {k: v for k, v in merged.items() if len(v) >= MIN_IMAGES_PER_CLASS}
+    # Filter out tiny classes and excluded labels
+    filtered = {
+        k: v for k, v in merged.items()
+        if len(v) >= MIN_IMAGES_PER_CLASS and k not in EXCLUDE_LABELS
+    }
+
+    # Cap large classes to reduce imbalance
+    for label in filtered:
+        if len(filtered[label]) > MAX_IMAGES_PER_CLASS:
+            random.shuffle(filtered[label])
+            filtered[label] = filtered[label][:MAX_IMAGES_PER_CLASS]
 
     print(f"Total species/classes with >= {MIN_IMAGES_PER_CLASS} images: {len(filtered)}")
     total_imgs = sum(len(v) for v in filtered.values())
@@ -402,6 +419,16 @@ def main():
     all_classes.append(download_lsfd())
     all_classes.append(download_fishnet())
     all_classes.append(download_fish4knowledge())
+
+    # Include iNaturalist Brazilian fish (must run download_inaturalist.py first)
+    inat_dir = DATASETS_DIR / "inaturalist_br"
+    if inat_dir.exists():
+        inat_classes = _find_class_folders(inat_dir)
+        total = sum(len(v) for v in inat_classes.values())
+        print(f"[iNaturalist-BR] Found {total} images in {len(inat_classes)} classes")
+        all_classes.append(inat_classes)
+    else:
+        print("[iNaturalist-BR] Not found. Run `python scripts/download_inaturalist.py` to add Brazilian species.")
 
     # Merge into unified train/val
     unify_datasets(all_classes)

@@ -5,6 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { API_BASE_URL } from "@/lib/api";
+import { conservationColor } from "@/lib/constants";
 
 /**
  * Full-screen modal showing detailed fish species information.
@@ -37,14 +39,9 @@ export default function FishDetailModal({ scientificName, commonName, onClose, o
     setError(false);
     setData(null);
 
-    const browserHost = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
-    const apiBase =
-      import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ??
-      `http://${browserHost}:4000`;
-
     const controller = new AbortController();
 
-    fetch(`${apiBase}/api/obis/species/${encodeURIComponent(scientificName)}`, {
+    fetch(`${API_BASE_URL}/api/obis/species/${encodeURIComponent(scientificName)}`, {
       signal: controller.signal,
     })
       .then((res) => {
@@ -66,25 +63,6 @@ export default function FishDetailModal({ scientificName, commonName, onClose, o
 
     return () => controller.abort();
   }, [scientificName, fetchKey]);
-
-  // Conservation status color mapping
-  const conservationColor = (status) => {
-    if (!status) return "bg-gray-100 text-gray-700";
-    const s = status.toLowerCase();
-    if (s.includes("criticamente") || s.includes("critically"))
-      return "bg-red-600 text-white";
-    if (s.includes("perigo") || s.includes("endangered") || s.includes("em perigo"))
-      return "bg-red-500 text-white";
-    if (s.includes("vulnerável") || s.includes("vulnerable"))
-      return "bg-orange-500 text-white";
-    if (s.includes("quase") || s.includes("near"))
-      return "bg-yellow-500 text-white";
-    if (s.includes("pouco preocupante") || s.includes("least"))
-      return "bg-green-600 text-white";
-    if (s.includes("dados") || s.includes("deficient"))
-      return "bg-gray-400 text-white";
-    return "bg-blue-100 text-blue-800";
-  };
 
   const displayName = data?.commonName || data?.nomeComum || commonName;
   const imgUrl = data?.imageUrl || data?.image;

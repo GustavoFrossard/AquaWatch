@@ -1,6 +1,2 @@
-/**
- * Shared code between client and server
- * Useful to share types between client and server
- * and/or small pure JS functions that can be used on both client and server
- */
-export {};
+// Shared API utilities are in client/lib/api.js
+export { API_BASE_URL, request } from "../client/lib/api.js";

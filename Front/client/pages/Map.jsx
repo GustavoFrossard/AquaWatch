@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, Popup, Circle, CircleMarker, ZoomControl, useMap, useMapEvents, } from "react-leaflet";
 import L from "leaflet";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MapPin, X, Info, Loader2 } from "lucide-react";
 import FishDetailModal from "@/components/FishDetailModal";
+import { getObservations } from "@/lib/auth";
+import { API_BASE_URL } from "@/lib/api";
+import { typeColors } from "@/lib/constants";
+import { useAuth } from "@/contexts/AuthContext";
 // Configuração de ícones do Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -17,7 +21,7 @@ function MapCenterController({ latitude, longitude, }) {
     const map = useMap();
     useEffect(() => {
         if (latitude && longitude) {
-            map.setView([latitude, longitude], 15, { animate: true });
+            map.setView([latitude, longitude], 9, { animate: true });
         }
     }, [latitude, longitude, map]);
     return null;
@@ -41,40 +45,14 @@ function MapResizeController() {
     }, [map]);
     return null;
 }
-function FishViewportController({ onViewportChange }) {
+// Tracks map zoom for marker sizing
+function ZoomTracker({ onZoomChange }) {
   const map = useMapEvents({
-    moveend: () => {
-      const bounds = map.getBounds();
-      onViewportChange({
-        minLng: bounds.getWest(),
-        minLat: bounds.getSouth(),
-        maxLng: bounds.getEast(),
-        maxLat: bounds.getNorth(),
-        zoom: map.getZoom(),
-      });
-    },
+    zoomend: () => onZoomChange(map.getZoom()),
   });
-  useEffect(() => {
-    const bounds = map.getBounds();
-    onViewportChange({
-      minLng: bounds.getWest(),
-      minLat: bounds.getSouth(),
-      maxLng: bounds.getEast(),
-      maxLat: bounds.getNorth(),
-      zoom: map.getZoom(),
-    });
-  }, [map, onViewportChange]);
+  useEffect(() => onZoomChange(map.getZoom()), [map, onZoomChange]);
   return null;
 }
-// Cores para diferentes tipos
-const typeColors = {
-    Fish: { color: "#3b82f6", bgColor: "#dbeafe" },
-    Mammal: { color: "#06b6d4", bgColor: "#cffafe" },
-    Coral: { color: "#ec4899", bgColor: "#fce7f3" },
-    Invasive: { color: "#ef4444", bgColor: "#fee2e2" },
-    Other: { color: "#f59e0b", bgColor: "#fef3c7" },
-    "Observação": { color: "#10b981", bgColor: "#d1fae5" },
-};
 // Criar ícone customizado para observações
 function createObservationIcon(type) {
     const colors = typeColors[type] || typeColors.Other;
@@ -105,17 +83,18 @@ function createObservationIcon(type) {
 }
 export default function MapPage() {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [userLocation, setUserLocation] = useState(null);
     const [observations, setObservations] = useState([]);
-    const [user, setUser] = useState(null);
     const [fishPoints, setFishPoints] = useState([]);
+    const [fishLoading, setFishLoading] = useState(false);
+    const [fishLoaded, setFishLoaded] = useState(false);
     const [selectedTypes, setSelectedTypes] = useState(new Set(["Fish", "Mammal", "Coral", "Invasive", "Other", "Observação"]));
     const [loading, setLoading] = useState(true);
     const [showMobileControls, setShowMobileControls] = useState(true);
-    const [viewport, setViewport] = useState(null);
+    const [mapZoom, setMapZoom] = useState(10);
     const [selectedFish, setSelectedFish] = useState(null);
     const [loadingFishDetail, setLoadingFishDetail] = useState(false);
-    const fishCacheRef = useRef(new Map());
     const fishRenderer = useMemo(() => L.canvas({ padding: 0.2 }), []);
     const isCoarsePointer = useMemo(() => {
       if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -124,16 +103,10 @@ export default function MapPage() {
       return window.matchMedia("(pointer: coarse)").matches;
     }, []);
     useEffect(() => {
-        // Carrega a sessão do usuário
-        const session = localStorage.getItem("userSession");
-        if (session) {
-            setUser(JSON.parse(session));
-        }
-        // Carrega observações salvas
-        const savedObservations = localStorage.getItem("observations");
-        if (savedObservations) {
-            setObservations(JSON.parse(savedObservations));
-        }
+        // Carrega observações salvas da API
+        getObservations()
+            .then((result) => setObservations(result.observations || []))
+            .catch(() => setObservations([]));
         // Check if native coords were passed via URL params (from mobile app)
         // Save to localStorage so they persist across internal navigation
         const params = new URLSearchParams(window.location.search);
@@ -182,101 +155,52 @@ export default function MapPage() {
         }
         setSelectedTypes(newTypes);
     };
+    // Load fish once based on user location (200 km radius)
     useEffect(() => {
-      if (!viewport) {
-        return;
-      }
+      if (!userLocation || fishLoaded) return;
 
-      const zoomBucket = viewport.zoom;
-      const precision = zoomBucket <= 5 ? 1 : zoomBucket <= 8 ? 2 : 3;
-      const key = [
-        viewport.minLng.toFixed(precision),
-        viewport.minLat.toFixed(precision),
-        viewport.maxLng.toFixed(precision),
-        viewport.maxLat.toFixed(precision),
-        String(zoomBucket),
-      ].join("|");
-
-      const cached = fishCacheRef.current.get(key);
-      if (cached) {
-        setFishPoints(cached);
-        return;
-      }
-
-      const browserHost = typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
-      const apiBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ?? `http://${browserHost}:4000`;
-
-      const padFactor = viewport.zoom >= 13 ? 0.18 : viewport.zoom >= 10 ? 0.35 : viewport.zoom >= 7 ? 0.6 : 0.9;
-      const lngPad = (viewport.maxLng - viewport.minLng) * padFactor;
-      const latPad = (viewport.maxLat - viewport.minLat) * padFactor;
-      const minLng = Math.max(-180, viewport.minLng - lngPad);
-      const minLat = Math.max(-90, viewport.minLat - latPad);
-      const maxLng = Math.min(180, viewport.maxLng + lngPad);
-      const maxLat = Math.min(90, viewport.maxLat + latPad);
-
-      const bbox = `${minLng},${minLat},${maxLng},${maxLat}`;
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(async () => {
+      setFishLoading(true);
+
+      (async () => {
         try {
-          const response = await fetch(`${apiBase}/api/obis/fish?bbox=${encodeURIComponent(bbox)}&zoom=${zoomBucket}`, {
-            signal: controller.signal,
-          });
-          if (!response.ok) {
-            return;
-          }
+          const url = `${API_BASE_URL}/api/obis/fish/nearby?lat=${userLocation.latitude}&lng=${userLocation.longitude}&radius=200`;
+          const response = await fetch(url, { signal: controller.signal });
+          if (!response.ok) return;
           const data = await response.json();
-          const points = Array.isArray(data?.points) ? data.points : [];
-          fishCacheRef.current.set(key, points);
-          setFishPoints(points);
-        }
-        catch {
-        }
-      }, 120);
-      return () => {
-        controller.abort();
-        window.clearTimeout(timeoutId);
-      };
-    }, [viewport]);
+          setFishPoints(Array.isArray(data?.points) ? data.points : []);
+          setFishLoaded(true);
+        } catch { /* aborted or failed */ }
+        finally { setFishLoading(false); }
+      })();
+
+      return () => controller.abort();
+    }, [userLocation, fishLoaded]);
 
     const renderedFishPoints = useMemo(() => {
-      if (!viewport || fishPoints.length === 0) {
-        return fishPoints;
-      }
+      if (fishPoints.length === 0) return fishPoints;
 
-      const zoom = viewport.zoom;
+      const zoom = mapZoom;
       const maxPoints = zoom <= 6 ? 1800 : zoom <= 9 ? 3200 : zoom <= 12 ? 5500 : 9000;
       const grid = zoom <= 6 ? 0.06 : zoom <= 9 ? 0.03 : zoom <= 12 ? 0.015 : 0.0;
 
-      if (grid <= 0 && fishPoints.length <= maxPoints) {
-        return fishPoints;
-      }
-
-      if (grid <= 0) {
-        return fishPoints.slice(0, maxPoints);
-      }
+      if (grid <= 0 && fishPoints.length <= maxPoints) return fishPoints;
+      if (grid <= 0) return fishPoints.slice(0, maxPoints);
 
       const cells = new Set();
       const result = [];
       for (const point of fishPoints) {
-        const latCell = Math.floor(point.lat / grid);
-        const lngCell = Math.floor(point.lng / grid);
-        const key = `${latCell}:${lngCell}`;
-        if (cells.has(key)) {
-          continue;
-        }
-
+        const key = `${Math.floor(point.lat / grid)}:${Math.floor(point.lng / grid)}`;
+        if (cells.has(key)) continue;
         cells.add(key);
         result.push(point);
-        if (result.length >= maxPoints) {
-          break;
-        }
+        if (result.length >= maxPoints) break;
       }
-
       return result;
-    }, [fishPoints, viewport]);
+    }, [fishPoints, mapZoom]);
 
     const fishMarkerStyle = useMemo(() => {
-      const zoom = viewport?.zoom ?? 10;
+      const zoom = mapZoom;
       const baseRadius = zoom <= 6 ? 4 : zoom <= 9 ? 5 : zoom <= 12 ? 6 : 7;
       const radius = isCoarsePointer ? baseRadius + 2 : baseRadius;
 
@@ -287,7 +211,7 @@ export default function MapPage() {
         fillOpacity: 0.9,
         weight: 1,
       };
-    }, [isCoarsePointer, viewport]);
+    }, [isCoarsePointer, mapZoom]);
     // Filtrar observações por tipo selecionado
     const filteredObservations = observations.filter((obs) => selectedTypes.has(obs.type));
     if (loading || !userLocation) {
@@ -310,15 +234,16 @@ export default function MapPage() {
       <div className="w-screen h-screen relative bg-background">
         {/* Mapa Fullscreen */}
         <div className="w-full h-full relative">
-          <MapContainer center={[userLocation.latitude, userLocation.longitude]} zoom={15} zoomControl={false} preferCanvas style={{ width: "100%", height: "100%" }}>
+          <MapContainer center={[userLocation.latitude, userLocation.longitude]} zoom={9} zoomControl={false} preferCanvas style={{ width: "100%", height: "100%" }}>
             <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
             <ZoomControl position="topright" />
 
-            {/* Círculo de alcance do usuário */}
-            <Circle center={[userLocation.latitude, userLocation.longitude]} radius={5000} pathOptions={{
-            color: "rgba(59, 130, 246, 0.3)",
-            fillColor: "rgba(59, 130, 246, 0.1)",
+            {/* Círculo de 200 km de raio */}
+            <Circle center={[userLocation.latitude, userLocation.longitude]} radius={200000} pathOptions={{
+            color: "rgba(59, 130, 246, 0.25)",
+            fillColor: "rgba(59, 130, 246, 0.05)",
             weight: 2,
+            dashArray: "8 4",
         }}/>
 
             {/* Marcador da localização do usuário */}
@@ -453,7 +378,7 @@ export default function MapPage() {
 
             <MapCenterController latitude={userLocation.latitude} longitude={userLocation.longitude}/>
             <MapResizeController />
-            <FishViewportController onViewportChange={setViewport}/>
+            <ZoomTracker onZoomChange={setMapZoom}/>
           </MapContainer>
 
           {/* Botão Voltar Mobile */}
