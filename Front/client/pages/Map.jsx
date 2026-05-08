@@ -89,9 +89,9 @@ export default function MapPage() {
     const [fishPoints, setFishPoints] = useState([]);
     const [fishLoading, setFishLoading] = useState(false);
     const [fishLoaded, setFishLoaded] = useState(false);
-    const [selectedTypes, setSelectedTypes] = useState(new Set(["Fish", "Mammal", "Coral", "Invasive", "Other", "Observação"]));
+    // Filtros removidos
     const [loading, setLoading] = useState(true);
-    const [showMobileControls, setShowMobileControls] = useState(true);
+    // Filtros removidos
     const [mapZoom, setMapZoom] = useState(10);
     const [selectedFish, setSelectedFish] = useState(null);
     const [loadingFishDetail, setLoadingFishDetail] = useState(false);
@@ -145,16 +145,7 @@ export default function MapPage() {
             setLoading(false);
         }
     }, []);
-    const toggleTypeFilter = (type) => {
-        const newTypes = new Set(selectedTypes);
-        if (newTypes.has(type)) {
-            newTypes.delete(type);
-        }
-        else {
-            newTypes.add(type);
-        }
-        setSelectedTypes(newTypes);
-    };
+    // Filtros removidos
     // Load fish once based on user location (200 km radius)
     useEffect(() => {
       if (!userLocation || fishLoaded) return;
@@ -212,8 +203,8 @@ export default function MapPage() {
         weight: 1,
       };
     }, [isCoarsePointer, mapZoom]);
-    // Filtrar observações por tipo selecionado
-    const filteredObservations = observations.filter((obs) => selectedTypes.has(obs.type));
+    // Exibir todas as observações sem filtro
+    const filteredObservations = observations;
     if (loading || !userLocation) {
         return (<div className="w-screen h-screen bg-gradient-to-br from-background via-primary/5 to-secondary/5 flex items-center justify-center">
         <div className="text-center">
@@ -329,7 +320,7 @@ export default function MapPage() {
               </Marker>))}
 
             {/* Pontos de peixes (OBIS) */}
-            {selectedTypes.has("Fish") && renderedFishPoints.map((fish) => (<CircleMarker key={fish.id} center={[fish.lat, fish.lng]} radius={fishMarkerStyle.radius} renderer={fishRenderer} pathOptions={{
+            {renderedFishPoints.map((fish) => (<CircleMarker key={fish.id} center={[fish.lat, fish.lng]} radius={fishMarkerStyle.radius} renderer={fishRenderer} pathOptions={{
                 color: fishMarkerStyle.color,
                 fillColor: fishMarkerStyle.fillColor,
                 fillOpacity: fishMarkerStyle.fillOpacity,
@@ -388,36 +379,7 @@ export default function MapPage() {
             </Button>
           </div>
 
-          {/* Painel Flutuante Mobile */}
-          {showMobileControls && (<div className="absolute bottom-4 right-4 z-[999] bg-white/95 backdrop-blur-md rounded-2xl border border-border shadow-lg p-4 max-w-xs">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-sm text-foreground">
-                  Filtros
-                </h3>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowMobileControls(false)}>
-                  <X className="w-4 h-4"/>
-                </Button>
-              </div>
-
-              <div className="space-y-2">
-                {Object.keys(typeColors).map((type) => (<label key={type} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent transition-colors cursor-pointer">
-                    <input type="checkbox" checked={selectedTypes.has(type)} onChange={() => toggleTypeFilter(type)} className="w-4 h-4 rounded flex-shrink-0"/>
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{
-                    backgroundColor: typeColors[type]?.color,
-                }}></div>
-                      <span className="text-xs text-foreground">{type}</span>
-                    </div>
-                  </label>))}
-              </div>
-            </div>)}
-
-          {/* Botão Flutuante para Abrir Controles Mobile */}
-          {!showMobileControls && (<button onClick={() => setShowMobileControls(true)} className="absolute bottom-4 right-4 z-[999] bg-primary text-white rounded-full p-3 shadow-lg hover:bg-primary/90 transition-colors" aria-label="Abrir filtros">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
-              </svg>
-            </button>)}
+          {/* Filtros removidos do mapa */}
         </div>
 
         {/* Fish detail modal */}
